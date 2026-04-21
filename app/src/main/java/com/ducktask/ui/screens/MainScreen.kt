@@ -10,7 +10,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +33,6 @@ import com.ducktask.ui.theme.*
 import kotlinx.coroutines.delay
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
@@ -65,7 +69,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Header
             Text(
                 text = "DuckTask",
                 style = MaterialTheme.typography.headlineLarge,
@@ -74,7 +77,6 @@ fun MainScreen(
                 modifier = Modifier.padding(vertical = 16.dp)
             )
 
-            // Input Card
             InputCard(
                 inputText = uiState.inputText,
                 isLoading = uiState.isLoading,
@@ -88,7 +90,6 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Task List
             if (tasks.isEmpty()) {
                 EmptyState()
             } else {
@@ -106,15 +107,13 @@ fun MainScreen(
                         TaskCard(
                             task = task,
                             onDelete = { viewModel.onEvent(MainUiEvent.DeleteTask(task)) },
-                            onDone = { viewModel.onEvent(MainUiEvent.MarkDone(task)) },
-                            modifier = Modifier.animateItem()
+                            onDone = { viewModel.onEvent(MainUiEvent.MarkDone(task)) }
                         )
                     }
                 }
             }
         }
 
-        // Success Toast
         AnimatedVisibility(
             visible = showSuccess,
             enter = fadeIn() + scaleIn(),
@@ -134,7 +133,7 @@ fun MainScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CheckCircle,
+                        imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = Color.White
                     )
@@ -157,12 +156,8 @@ private fun InputCard(
     onInputChange: (String) -> Unit,
     onSubmit: () -> Unit
 ) {
-    val scale by remember { mutableFloatStateOf(1f) }
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -247,13 +242,10 @@ private fun InputCard(
 private fun TaskCard(
     task: Task,
     onDelete: () -> Unit,
-    onDone: () -> Unit,
-    modifier: Modifier = Modifier
+    onDone: () -> Unit
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
-
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -303,7 +295,7 @@ private fun TaskCard(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Repeat,
+                                imageVector = Icons.Default.Notifications,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
                                 tint = DuckOrange
@@ -320,14 +312,14 @@ private fun TaskCard(
                 Row {
                     IconButton(onClick = onDone) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircleOutline,
+                            imageVector = Icons.Default.Check,
                             contentDescription = "完成",
                             tint = Success
                         )
                     }
                     IconButton(onClick = onDelete) {
                         Icon(
-                            imageVector = Icons.Default.DeleteOutline,
+                            imageVector = Icons.Default.Delete,
                             contentDescription = "删除",
                             tint = Error.copy(alpha = 0.7f)
                         )
@@ -347,7 +339,7 @@ private fun EmptyState() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
-            imageVector = Icons.Default.NotificationsNone,
+            imageVector = Icons.Default.Notifications,
             contentDescription = null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)

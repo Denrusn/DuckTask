@@ -1,11 +1,7 @@
 package com.ducktask.parser
 
 import java.time.LocalDateTime
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.DayOfWeek
 import java.time.temporal.ChronoUnit
-import kotlin.math.abs
 
 data class ParsedResult(
     val time: LocalDateTime,
@@ -41,12 +37,16 @@ object TimeParser {
     )
 
     fun parse(text: String): ParsedResult {
-        val parser = LocalParser(text)
+        val parser = LocalParser(text, CN_NUM, CN_UNIT)
         return parser.parse()
     }
 }
 
-private class LocalParser(private val text: String) {
+private class LocalParser(
+    private val text: String,
+    private val cnNum: Map<Char, Int>,
+    private val cnUnit: Map<Char, Int>
+) {
     private val now = LocalDateTime.now()
     private var idx = 0
     private var afternoon: Boolean? = null
@@ -58,14 +58,11 @@ private class LocalParser(private val text: String) {
     private val words: List<String>
 
     init {
-        // Simple tokenization - split by common delimiters
         words = tokenize(text)
     }
 
     private fun tokenize(text: String): List<String> {
-        // Replace Chinese number words to digits first
         val processed = parseCnNumber(text)
-        // Simple tokenization keeping important patterns
         return processed
             .replace("年", " 年 ")
             .replace("月", " 月 ")
@@ -91,26 +88,28 @@ private class LocalParser(private val text: String) {
         var i = 0
         while (i < text.length) {
             val char = text[i]
-            when {
-                CN_NUM.containsKey(char) -> {
-                    var num = CN_NUM[char]!!
-                    var j = i + 1
-                    while (j < text.length && CN_UNIT.containsKey(text[j])) {
-                        val unit = CN_UNIT[text[j]]!!
-                        if (unit == 10 && num < 10) {
-                            num *= unit
+            val num = cnNum[char]
+            if (num != null) {
+                var numVal = num
+                var j = i + 1
+                while (j < text.length) {
+                    val unit = cnUnit[text[j]]
+                    if (unit != null) {
+                        if (unit == 10 && numVal < 10) {
+                            numVal *= unit
                         } else {
-                            num += unit
+                            numVal += unit
                         }
                         j++
+                    } else {
+                        break
                     }
-                    result.append(num)
-                    i = j
                 }
-                else -> {
-                    result.append(char)
-                    i++
-                }
+                result.append(numVal)
+                i = j
+            } else {
+                result.append(char)
+                i++
             }
         }
         return result.toString()
@@ -136,7 +135,6 @@ private class LocalParser(private val text: String) {
                 try {
                     var resultTime = now
 
-                    // Apply time deltas
                     if (timeDeltaFields.containsKey("years")) {
                         resultTime = resultTime.plusYears(timeDeltaFields["years"]!!)
                     }
@@ -159,7 +157,6 @@ private class LocalParser(private val text: String) {
                         resultTime = resultTime.plusSeconds(timeDeltaFields["seconds"]!!)
                     }
 
-                    // Apply time fields
                     if (timeFields.containsKey("year")) {
                         resultTime = resultTime.withYear(timeFields["year"]!!)
                     }
@@ -179,13 +176,10 @@ private class LocalParser(private val text: String) {
                         resultTime = resultTime.withSecond(timeFields["second"]!!)
                     }
 
-                    // If time is in the past, move to future
                     if (resultTime.isBefore(now)) {
                         if (timeFields.containsKey("day") || timeFields.containsKey("month") || timeFields.containsKey("year")) {
-                            // If explicit date was set, it's an error
                             throw ParseException("时间已经是过去时了，请重新设置一个将来的时间")
                         }
-                        // For relative times like "半小时后", add a day
                         resultTime = resultTime.plusDays(1)
                     }
 
@@ -272,15 +266,9 @@ private class LocalParser(private val text: String) {
     private fun consumeYearPeriod(): Boolean {
         val beginning = idx
         when {
-            consumeWord("今年") -> {
-                timeDeltaFields["years"] = 0
-            }
-            consumeWord("明年") -> {
-                timeDeltaFields["years"] = 1
-            }
-            consumeWord("后年") -> {
-                timeDeltaFields["years"] = 2
-            }
+            consumeWord("今年") -> timeDeltaFields["years"] = 0
+            consumeWord("明年") -> timeDeltaFields["years"] = 1
+            consumeWord("后年") -> timeDeltaFields["years"] = 2
             else -> {
                 val tmp = consumeDigit()
                 if (tmp != null && consumeWord("年") && peekNextWord() in listOf("后", "以后")) {
@@ -306,15 +294,13 @@ private class LocalParser(private val text: String) {
     private fun consumeMonthPeriod(): Boolean {
         val beginning = idx
         when {
-            consumeWord("下个月", "下月") -> {
-                timeDeltaFields["months"] = 1
-            }
-            currentWord().isDigit() -> {
+            consumeWord("下个月", "下月") -> timeDeltaFields["months"] = 1
+            currentWord().isNotEmpty() && currentWord().first().isDigit() -> {
                 val tmp = consumeDigit()
                 consumeWord("个")
                 if (currentWord() == "月" && peekNextWord() in listOf("后", "以后")) {
                     advance()
-                    timeDeltaFields["months"] = tmp?.toLong() ?: 0
+                    timeDeltaFields["months"] = (tmp ?: 0).toLong()
                 }
             }
         }
@@ -379,7 +365,6 @@ private class LocalParser(private val text: String) {
         }
         timeDeltaFields["days"] = days
 
-        // Check for weekday in parentheses like "明天(周四)晚上"
         if (consumeWord("(") || consumeWord("（")) {
             if (consumeWord("周", "星期")) {
                 consumeWord("日", "天") || consumeDigit()
@@ -407,12 +392,12 @@ private class LocalParser(private val text: String) {
                 if (d != null && d in 1..6) {
                     consumeDigit()
                     weekday = d - 1
-                    if (LocalDateTime.now().dayOfWeek.value % 7 == weekday) {
+                    if (now.dayOfWeek.value % 7 == weekday) {
                         weekDelta = 1
                     }
                 }
             }
-        } else if (currentWord().isDigit()) {
+        } else if (currentWord().isNotEmpty() && currentWord().first().isDigit()) {
             val tmp = consumeDigit()
             consumeWord("个")
             if (currentWord() in listOf("周", "星期", "礼拜") && peekNextWord() in listOf("后", "以后")) {
@@ -451,7 +436,7 @@ private class LocalParser(private val text: String) {
         var minutes = 0
 
         when {
-            currentWord().isDigit() -> {
+            currentWord().isNotEmpty() && currentWord().first().isDigit() -> {
                 val tmp = consumeDigit()
                 consumeWord("个")
                 if (consumeWord("半小时")) {
@@ -523,7 +508,6 @@ private class LocalParser(private val text: String) {
                 return true
             }
         }
-
         idx = beginning
         return false
     }
@@ -574,7 +558,6 @@ private class LocalParser(private val text: String) {
             timeFields["month"] = month
             return true
         }
-
         idx = beginning
         return false
     }
@@ -725,7 +708,7 @@ private class LocalParser(private val text: String) {
 
     private fun consumeDigit(consume: Boolean = true): Int? {
         val word = currentWord()
-        if (word.isDigit()) {
+        if (word.isNotEmpty() && word.first().isDigit()) {
             val digit = word.toInt()
             if (consume) advance()
             return digit
