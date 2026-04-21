@@ -16,7 +16,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): Task?
 
-    @Query("SELECT * FROM tasks WHERE isDone = 0 AND notify_time BETWEEN :start AND :end ORDER BY time ASC")
+    @Query("SELECT * FROM tasks WHERE isDone = 0 AND time BETWEEN :start AND :end ORDER BY time ASC")
     suspend fun getTasksDueBetween(start: LocalDateTime, end: LocalDateTime): List<Task>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
