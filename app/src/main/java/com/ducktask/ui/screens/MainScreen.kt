@@ -108,7 +108,6 @@ fun MainScreen(
                 )
 
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(tasks, key = { it.id }) { task ->
@@ -117,6 +116,9 @@ fun MainScreen(
                             onDelete = { viewModel.onEvent(MainUiEvent.DeleteTask(task)) },
                             onDone = { viewModel.onEvent(MainUiEvent.MarkDone(task)) }
                         )
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
                     }
                 }
             }
@@ -341,9 +343,7 @@ private fun TaskCard(
 @Composable
 private fun EmptyState() {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f),
+        modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
