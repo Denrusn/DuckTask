@@ -24,7 +24,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,7 +40,6 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
-    val windowInsets = WindowInsets.systemBars
 
     var showSuccess by remember { mutableStateOf(false) }
 
@@ -65,7 +63,8 @@ fun MainScreen(
                     )
                 )
             )
-            .padding(windowInsets)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         Column(
             modifier = Modifier
@@ -129,7 +128,6 @@ fun MainScreen(
             exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .statusBarsPadding()
                 .padding(top = 16.dp)
         ) {
             Surface(
