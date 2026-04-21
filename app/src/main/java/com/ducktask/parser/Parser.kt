@@ -1,7 +1,6 @@
 package com.ducktask.parser
 
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 
 data class ParsedResult(
     val time: LocalDateTime,
@@ -55,59 +54,108 @@ private class LocalParser(
     private val timeDeltaFields = mutableMapOf<String, Long>()
     private val repeat = mutableMapOf<String, Int>()
 
-    private val words: List<String>
+    // Token types
+    private data class Token(val word: String, val isDigit: Boolean)
+    private val words: List<Token>
 
     init {
         words = tokenize(text)
     }
 
-    private fun tokenize(text: String): List<String> {
-        val processed = parseCnNumber(text)
-        // Use a pattern that keeps digits with their following units
-        val tokens = mutableListOf<String>()
-        val regex = Regex("([年月日周时分秒号]|提醒|每|隔|的|后)")
-        var lastEnd = 0
+    // Multi-character date/time words that should be single tokens
+    private val PERIOD_WORDS = setOf(
+        "今天", "明天", "后天", "大后天",
+        "今早", "今晚", "明早", "明晚",
+        "昨晚", "今晚", "今晨", "今午",
+        "凌晨", "夜里", "深夜", "半夜",
+        "早上", "早晨", "上午", "中午",
+        "下午", "傍晚", "晚上",
+        "周一", "周二", "周三", "周四", "周五", "周六", "周日",
+        "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日",
+        "礼拜一", "礼拜二", "礼拜三", "礼拜四", "礼拜五", "礼拜六", "礼拜日"
+    )
 
-        for (match in regex.findAll(processed)) {
-            val prefix = processed.substring(lastEnd, match.range.first)
-            if (prefix.isNotBlank()) {
-                // Split remaining text but group consecutive digits
-                groupDigits(tokens, prefix)
-            }
-            val token = match.value
-            if (token.isNotBlank()) {
-                when (token) {
-                    "提醒" -> {} // skip
-                    else -> tokens.add(token)
+    // Single character period markers
+    private val SINGLE_PERIOD_CHARS = setOf('年', '月', '周', '日', '号', '点', '时', '分', '秒')
+
+    private fun tokenize(text: String): List<Token> {
+        val processed = parseCnNumber(text)
+        val tokens = mutableListOf<Token>()
+
+        var i = 0
+        while (i < processed.length) {
+            val char = processed[i]
+
+            when {
+                // Skip these characters
+                char in "的的" -> {
+                    i++
+                }
+                // Single character time/date units
+                char in SINGLE_PERIOD_CHARS -> {
+                    tokens.add(Token(char.toString(), false))
+                    i++
+                }
+                // Skip 提醒
+                i + 2 < processed.length && processed.substring(i, i + 3) == "提醒" -> {
+                    i += 3
+                }
+                // Skip 提醒我
+                i + 3 < processed.length && processed.substring(i, i + 4) == "提醒我" -> {
+                    i += 4
+                }
+                // Skip 隔
+                char == '隔' -> {
+                    i++
+                }
+                // Skip 后 (relative)
+                char == '后' -> {
+                    i++
+                }
+                // Skip 每 when not part of 每周 etc.
+                char == '每' && (i + 1 >= processed.length || processed[i + 1] !in "年月周天") -> {
+                    i++
+                }
+                // Check for multi-character period words
+                else -> {
+                    var matched = false
+                    // Try longest match first (3 chars, then 2)
+                    for (len in 3 downTo 2) {
+                        if (i + len <= processed.length) {
+                            val word = processed.substring(i, i + len)
+                            if (word in PERIOD_WORDS) {
+                                tokens.add(Token(word, false))
+                                i += len
+                                matched = true
+                                break
+                            }
+                        }
+                    }
+                    if (!matched) {
+                        // Digits - collect consecutive digits
+                        if (char.isDigit() || (char == '-' && i + 1 < processed.length && processed[i + 1].isDigit())) {
+                            val start = i
+                            if (processed[i] == '-') i++
+                            while (i < processed.length && processed[i].isDigit()) {
+                                i++
+                            }
+                            tokens.add(Token(processed.substring(start, i), true))
+                        }
+                        // Chinese numbers
+                        else if (cnNum.containsKey(char)) {
+                            tokens.add(Token(char.toString(), true))
+                            i++
+                        }
+                        // Other characters - skip
+                        else {
+                            i++
+                        }
+                    }
                 }
             }
-            lastEnd = match.range.last + 1
-        }
-        // Handle remaining text after last match
-        val suffix = processed.substring(lastEnd)
-        if (suffix.isNotBlank()) {
-            groupDigits(tokens, suffix)
         }
 
-        return tokens.filter { it.isNotBlank() }
-    }
-
-    private fun groupDigits(tokens: MutableList<String>, text: String) {
-        // Group consecutive digits together with optional leading sign
-        val digitRegex = Regex("(-?\\d+)")
-        var lastEnd = 0
-        for (match in digitRegex.findAll(text)) {
-            val prefix = text.substring(lastEnd, match.range.first)
-            if (prefix.isNotBlank()) {
-                tokens.addAll(prefix.trim().split(Regex("\\s+")).filter { it.isNotBlank() })
-            }
-            tokens.add(match.value)
-            lastEnd = match.range.last + 1
-        }
-        val suffix = text.substring(lastEnd)
-        if (suffix.isNotBlank()) {
-            tokens.addAll(suffix.trim().split(Regex("\\s+")).filter { it.isNotBlank() })
-        }
+        return tokens
     }
 
     private fun parseCnNumber(text: String): String {
@@ -146,67 +194,42 @@ private class LocalParser(
         while (idx < words.size) {
             val beginning = idx
 
-            consumeRepeat()
-            consumeYearPeriod() || consumeMonthPeriod() || consumeDayPeriod()
-            consumeWeekdayPeriod() || consumeHourPeriod() || consumeMinutePeriod() || consumeSecondPeriod()
-            consumeYear() || consumeMonth() || consumeDay()
-            consumeHour()
+            // Try to parse in order: repeat -> periods -> weekday -> hour -> etc.
+            val consumedRepeat = consumeRepeat()
 
-            if (idx != beginning) {
+            // Parse day/date periods first
+            val consumedPeriod = consumeYearPeriod() || consumeMonthPeriod() || consumeDayPeriod()
+
+            // Parse weekday
+            val consumedWeekday = consumeWeekdayPeriod()
+
+            // Parse hour/minute periods (relative like "2小时后")
+            val consumedRelative = consumeHourPeriod() || consumeMinutePeriod() || consumeSecondPeriod()
+
+            // Parse explicit time
+            val consumedTime = consumeYear() || consumeMonth() || consumeDay() || consumeHour()
+
+            if (idx != beginning || consumedRepeat || consumedPeriod || consumedWeekday || consumedRelative || consumedTime) {
+                // Time was found or repeat was set
                 consumeWord("准时", "是")
-                if (consumeWord("提醒")) {
-                    consumeWord("我")
-                }
+
+                // Skip "提醒" and "我"
+                consumeWord("提醒")
+                consumeWord("我")
+
+                // Get remaining text as event
                 consumeToEnd()
 
                 try {
-                    var resultTime = now
+                    var resultTime = buildResultTime()
 
-                    if (timeDeltaFields.containsKey("years")) {
-                        resultTime = resultTime.plusYears(timeDeltaFields["years"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("months")) {
-                        resultTime = resultTime.plusMonths(timeDeltaFields["months"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("weeks")) {
-                        resultTime = resultTime.plusWeeks(timeDeltaFields["weeks"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("days")) {
-                        resultTime = resultTime.plusDays(timeDeltaFields["days"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("hours")) {
-                        resultTime = resultTime.plusHours(timeDeltaFields["hours"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("minutes")) {
-                        resultTime = resultTime.plusMinutes(timeDeltaFields["minutes"]!!)
-                    }
-                    if (timeDeltaFields.containsKey("seconds")) {
-                        resultTime = resultTime.plusSeconds(timeDeltaFields["seconds"]!!)
-                    }
-
-                    if (timeFields.containsKey("year")) {
-                        resultTime = resultTime.withYear(timeFields["year"]!!)
-                    }
-                    if (timeFields.containsKey("month")) {
-                        resultTime = resultTime.withMonth(timeFields["month"]!!)
-                    }
-                    if (timeFields.containsKey("day")) {
-                        resultTime = resultTime.withDayOfMonth(timeFields["day"]!!)
-                    }
-                    if (timeFields.containsKey("hour")) {
-                        resultTime = resultTime.withHour(timeFields["hour"]!!)
-                    }
-                    if (timeFields.containsKey("minute")) {
-                        resultTime = resultTime.withMinute(timeFields["minute"]!!)
-                    }
-                    if (timeFields.containsKey("second")) {
-                        resultTime = resultTime.withSecond(timeFields["second"]!!)
-                    }
-
+                    // Check if time is in the past
                     if (resultTime.isBefore(now)) {
+                        // If explicit date was given, it's an error
                         if (timeFields.containsKey("day") || timeFields.containsKey("month") || timeFields.containsKey("year")) {
                             throw ParseException("时间已经是过去时了，请重新设置一个将来的时间")
                         }
+                        // For relative times without explicit date, add a day
                         resultTime = resultTime.plusDays(1)
                     }
 
@@ -237,20 +260,72 @@ private class LocalParser(
         throw ParseException("无法理解输入，请尝试更明确的表达，如'明天下午3点提醒我开会'")
     }
 
+    private fun buildResultTime(): LocalDateTime {
+        var resultTime = now
+
+        // Apply time deltas (relative offsets)
+        if (timeDeltaFields.containsKey("years")) {
+            resultTime = resultTime.plusYears(timeDeltaFields["years"]!!)
+        }
+        if (timeDeltaFields.containsKey("months")) {
+            resultTime = resultTime.plusMonths(timeDeltaFields["months"]!!)
+        }
+        if (timeDeltaFields.containsKey("weeks")) {
+            resultTime = resultTime.plusWeeks(timeDeltaFields["weeks"]!!)
+        }
+        if (timeDeltaFields.containsKey("days")) {
+            resultTime = resultTime.plusDays(timeDeltaFields["days"]!!)
+        }
+        if (timeDeltaFields.containsKey("hours")) {
+            resultTime = resultTime.plusHours(timeDeltaFields["hours"]!!)
+        }
+        if (timeDeltaFields.containsKey("minutes")) {
+            resultTime = resultTime.plusMinutes(timeDeltaFields["minutes"]!!)
+        }
+        if (timeDeltaFields.containsKey("seconds")) {
+            resultTime = resultTime.plusSeconds(timeDeltaFields["seconds"]!!)
+        }
+
+        // Apply explicit time fields
+        if (timeFields.containsKey("year")) {
+            resultTime = resultTime.withYear(timeFields["year"]!!)
+        }
+        if (timeFields.containsKey("month")) {
+            resultTime = resultTime.withMonth(timeFields["month"]!!)
+        }
+        if (timeFields.containsKey("day")) {
+            resultTime = resultTime.withDayOfMonth(timeFields["day"]!!)
+        }
+        if (timeFields.containsKey("hour")) {
+            resultTime = resultTime.withHour(timeFields["hour"]!!)
+        }
+        if (timeFields.containsKey("minute")) {
+            resultTime = resultTime.withMinute(timeFields["minute"]!!)
+        }
+        if (timeFields.containsKey("second")) {
+            resultTime = resultTime.withSecond(timeFields["second"]!!)
+        }
+
+        return resultTime
+    }
+
     private fun consumeRepeat(): Boolean {
         val beginning = idx
-        if (consumeWord("每", "每隔")) {
-            consumeWord("间隔")
-            val repeatCount = consumeDigit() ?: 1
-            consumeWord("个")
+        if (consumeWord("每")) {
+            var repeatCount = 1
+            if (currentIsDigit()) {
+                repeatCount = consumeDigit()!!
+            }
 
             when {
-                consumeWord("年") && consumeMonth() -> {
+                consumeWord("年") -> {
                     repeat["year"] = repeatCount
+                    consumeMonth()
                     return true
                 }
-                consumeWord("月") && consumeDay() -> {
+                consumeWord("月") -> {
                     repeat["month"] = repeatCount
+                    consumeDay()
                     return true
                 }
                 consumeWord("天") -> {
@@ -261,28 +336,24 @@ private class LocalParser(
                     }
                     return true
                 }
-                currentWord() in listOf("周", "星期") -> {
-                    if (peekNextWord() in listOf("周", "星期")) {
-                        advance()
-                    }
-                    if (consumeWeekdayPeriod()) {
-                        repeat["week"] = repeatCount
-                        return true
-                    }
+                // Handle 周六, 周日 etc. (multi-char weekday after 周)
+                currentWord().startsWith("周") && currentWord().length > 1 -> {
+                    repeat["week"] = repeatCount
+                    consumeWeekdayNumber()
+                    return true
                 }
-                consumeWord("小时") -> {
-                    consumeMinute()
+                consumeWord("周") || consumeWord("星期") || consumeWord("礼拜") -> {
+                    repeat["week"] = repeatCount
+                    consumeWeekdayNumber()
+                    return true
+                }
+                consumeWord("小时") || consumeWord("钟头") -> {
                     if (repeatCount < 12) {
                         throw ParseException("每小时重复太频繁了，至少需要间隔12小时")
                     }
                     repeat["hour"] = repeatCount
+                    consumeMinute()
                     return true
-                }
-                consumeWord("分", "分钟") -> {
-                    throw ParseException("暂不支持分钟级重复提醒")
-                }
-                consumeWord("工作日") -> {
-                    throw ParseException("暂不支持工作日提醒，请使用'每天'试试")
                 }
             }
         }
@@ -298,7 +369,7 @@ private class LocalParser(
             consumeWord("后年") -> timeDeltaFields["years"] = 2
             else -> {
                 val tmp = consumeDigit()
-                if (tmp != null && consumeWord("年") && peekNextWord() in listOf("后", "以后")) {
+                if (tmp != null && consumeWord("年") && peekWord() == "后") {
                     advance()
                     timeDeltaFields["years"] = tmp.toLong()
                 }
@@ -311,7 +382,7 @@ private class LocalParser(
         }
 
         if ((timeDeltaFields["years"] ?: 0) >= 100) {
-            throw ParseException("时间跨度太大了，恕我不能保证这么久之后的服务")
+            throw ParseException("时间跨度太大了")
         }
         consumeWord("的")
         consumeMonth()
@@ -321,11 +392,10 @@ private class LocalParser(
     private fun consumeMonthPeriod(): Boolean {
         val beginning = idx
         when {
-            consumeWord("下个月", "下月") -> timeDeltaFields["months"] = 1
-            currentWord().isNotEmpty() && currentWord().first().isDigit() -> {
+            consumeWord("下个月") || consumeWord("下月") -> timeDeltaFields["months"] = 1
+            currentIsDigit() -> {
                 val tmp = consumeDigit()
-                consumeWord("个")
-                if (currentWord() == "月" && peekNextWord() in listOf("后", "以后")) {
+                if (consumeWord("个") && consumeWord("月") && peekWord() == "后") {
                     advance()
                     timeDeltaFields["months"] = (tmp ?: 0).toLong()
                 }
@@ -347,7 +417,6 @@ private class LocalParser(
 
     private fun consumeDayPeriod(): Boolean {
         val beginning = idx
-        var hasHour = false
         var hour = 8
         var days: Long? = null
 
@@ -358,7 +427,7 @@ private class LocalParser(
                 afternoon = true
                 hour = 20
             }
-            consumeWord("明早", "明天") -> {
+            consumeWord("明早") || consumeWord("明天") -> {
                 days = 1
                 afternoon = false
             }
@@ -369,14 +438,13 @@ private class LocalParser(
             }
             consumeWord("后天") -> days = 2
             consumeWord("大后天") -> days = 3
-            else -> {
+            currentIsDigit() -> {
                 val tmp = consumeDigit()
                 if (tmp != null && consumeWord("天")) {
-                    if (consumeWord("后", "以后")) {
+                    if (consumeWord("后") || consumeWord("以后")) {
                         days = tmp.toLong()
                     } else if (consumeHourPeriod()) {
                         days = tmp.toLong()
-                        hasHour = true
                     }
                 }
             }
@@ -392,15 +460,18 @@ private class LocalParser(
         }
         timeDeltaFields["days"] = days
 
+        // Skip weekday in parentheses like "(周四)"
         if (consumeWord("(") || consumeWord("（")) {
-            if (consumeWord("周", "星期")) {
-                if (!consumeWord("日", "天")) consumeDigit()
+            consumeWord("周")
+            if (!consumeWord("日") && !consumeWord("天")) {
+                consumeDigit()
             }
             consumeWord(")") || consumeWord("）")
         }
 
-        if (!hasHour && !consumeHour()) {
+        if (!consumeHour()) {
             timeFields["hour"] = hour
+            // Add some randomness to avoid all reminders firing at the same minute
             timeFields["minute"] = (0..3).random()
         }
         return true
@@ -409,93 +480,107 @@ private class LocalParser(
     private fun consumeWeekdayPeriod(): Boolean {
         val beginning = idx
         var weekday: Int? = null
-        var weekDelta = 0
 
-        if (consumeWord("周", "下周", "下个周", "星期", "下星期", "下个星期", "礼拜", "下礼拜", "下个礼拜")) {
-            if (consumeWord("日", "天")) {
-                weekday = 6
-            } else {
-                val d = consumeDigit(consume = false)
-                if (d != null && d in 1..6) {
-                    consumeDigit()
-                    weekday = d - 1
-                    if (now.dayOfWeek.value % 7 == weekday) {
-                        weekDelta = 1
+        // Handle multi-char weekday tokens like "周六", "周一" etc.
+        val word = currentWord()
+        if (word.length == 2 && word[0] == '周') {
+            val weekdayMap = mapOf('一' to 1, '二' to 2, '三' to 3, '四' to 4, '五' to 5, '六' to 6, '日' to 7, '天' to 7)
+            weekdayMap[word[1]]?.let {
+                weekday = it
+                advance()
+                // If today is the same weekday, schedule for next week
+                if (now.dayOfWeek.value == it) {
+                    timeDeltaFields["days"] = 7
+                }
+            }
+        } else if (consumeWord("周") || consumeWord("星期") || consumeWord("礼拜")) {
+            if (consumeWord("日") || consumeWord("天")) {
+                weekday = 7  // Sunday
+            } else if (currentIsDigit()) {
+                val d = consumeDigit()!!
+                if (d in 1..7) {
+                    weekday = d
+                    // If today is the same weekday, schedule for next week
+                    if (now.dayOfWeek.value == d) {
+                        timeDeltaFields["days"] = 7
                     }
                 }
             }
-        } else if (currentWord().isNotEmpty() && currentWord().first().isDigit()) {
-            val tmp = consumeDigit()
-            consumeWord("个")
-            if (currentWord() in listOf("周", "星期", "礼拜") && peekNextWord() in listOf("后", "以后")) {
-                advance()
-                weekDelta = tmp ?: 0
-            }
         }
 
-        when {
-            weekday != null -> {
-                timeDeltaFields["weekday"] = weekday.toLong()
+        if (weekday != null) {
+            timeDeltaFields["weekday"] = weekday!!.toLong()
+            if (!timeDeltaFields.containsKey("days")) {
                 timeDeltaFields["days"] = 1
             }
-            weekDelta > 0 -> {
-                if (weekDelta > 100) {
-                    throw ParseException("时间跨度太大了")
-                }
-                timeDeltaFields["weeks"] = weekDelta.toLong()
+            if (!consumeHour()) {
+                timeFields["hour"] = 8
+                timeFields["minute"] = 0
             }
-            else -> {
-                idx = beginning
-                return false
+            return true
+        }
+
+        idx = beginning
+        return false
+    }
+
+    private fun consumeWeekdayNumber() {
+        // Already consumed "周"/"星期"/"礼拜" before calling this
+        // Or the full weekday token like "周六" is still intact
+        val word = currentWord()
+
+        // Handle full weekday tokens like "周六", "周日", "周一" etc.
+        if (word.length == 2 && word[0] == '周') {
+            val weekdayMap = mapOf('一' to 1, '二' to 2, '三' to 3, '四' to 4, '五' to 5, '六' to 6, '日' to 7, '天' to 7)
+            weekdayMap[word[1]]?.let {
+                timeDeltaFields["weekday"] = it.toLong()
+                advance()
+                return
             }
         }
 
-        if (!consumeHour()) {
-            timeFields["hour"] = 8
-            timeFields["minute"] = 0
+        if (consumeWord("日") || consumeWord("天")) {
+            // Sunday = 7
+            timeDeltaFields["weekday"] = 7L
+        } else if (currentIsDigit()) {
+            val d = consumeDigit()!!
+            if (d in 1..7) {
+                // Store weekday for later calculation
+                timeDeltaFields["weekday"] = d.toLong()
+            }
         }
-        return true
     }
 
     private fun consumeHourPeriod(): Boolean {
         val beginning = idx
-        var hours = 0
-        var minutes = 0
 
-        when {
-            currentWord().isNotEmpty() && currentWord().first().isDigit() -> {
-                val tmp = consumeDigit()
-                consumeWord("个")
-                if (consumeWord("半小时")) {
-                    if (consumeWord("后", "以后")) {
-                        hours = tmp ?: 0
-                        minutes = 30
-                    }
-                } else if (consumeWord("小时", "钟头")) {
-                    if (consumeWord("后", "以后") || consumeMinutePeriod()) {
-                        hours = tmp ?: 0
-                    }
-                }
-            }
-            consumeWord("半小时") || (consumeWord("半个") && consumeWord("小时", "钟头")) -> {
-                if (consumeWord("后", "以后")) {
-                    minutes = 30
-                }
+        // "半小时后" or "半个小时后"
+        if (consumeWord("半") && (consumeWord("小时") || consumeWord("钟头"))) {
+            if (consumeWord("后") || consumeWord("以后")) {
+                timeDeltaFields["minutes"] = 30
+                return true
             }
         }
 
-        if (hours == 0 && minutes == 0) {
-            idx = beginning
-            return false
+        // "2小时后" or "2个半小时后"
+        if (currentIsDigit()) {
+            val tmp = consumeDigit()!!
+            if (consumeWord("个") && consumeWord("半") && (consumeWord("小时") || consumeWord("钟头"))) {
+                if (consumeWord("后") || consumeWord("以后")) {
+                    timeDeltaFields["hours"] = tmp.toLong()
+                    timeDeltaFields["minutes"] = 30
+                    return true
+                }
+            } else if (consumeWord("小时") || consumeWord("钟头")) {
+                if (consumeWord("后") || consumeWord("以后") || consumeMinutePeriod()) {
+                    timeDeltaFields["hours"] = tmp.toLong()
+                    return true
+                }
+            }
         }
 
-        if (hours > 100) {
-            throw ParseException("时间跨度太大了")
-        }
-
-        if (hours > 0) timeDeltaFields["hours"] = hours.toLong()
-        if (minutes > 0) timeDeltaFields["minutes"] = minutes.toLong()
-        return true
+        idx = beginning
+        return false
     }
 
     private fun consumeMinutePeriod(): Boolean {
@@ -503,16 +588,15 @@ private class LocalParser(
         val minuteDelta = consumeDigit()
 
         if (minuteDelta != null) {
-            if (consumeWord("分", "分钟")) {
-                consumeSecondPeriod()
-                consumeWord("后", "以后")
+            if (consumeWord("分") || consumeWord("分钟")) {
+                consumeWord("后") || consumeWord("以后")
                 if (minuteDelta > 1000) {
                     throw ParseException("时间跨度太大了")
                 }
                 timeDeltaFields["minutes"] = minuteDelta.toLong()
                 return true
             }
-        } else if (consumeWord("等会", "一会", "一会儿")) {
+        } else if (consumeWord("等会") || consumeWord("一会") || consumeWord("一会儿")) {
             timeDeltaFields["minutes"] = 10
             return true
         }
@@ -526,8 +610,8 @@ private class LocalParser(
         val secondDelta = consumeDigit()
 
         if (secondDelta != null) {
-            if (consumeWord("秒", "秒钟")) {
-                consumeWord("后", "以后")
+            if (consumeWord("秒") || consumeWord("秒钟")) {
+                consumeWord("后") || consumeWord("以后")
                 if (secondDelta > 10000) {
                     throw ParseException("时间跨度太大了")
                 }
@@ -543,7 +627,7 @@ private class LocalParser(
         val beginning = idx
         val year = consumeDigit()
 
-        if (year == null || !consumeWord("年", "-", "/", ".")) {
+        if (year == null || !consumeWord("年")) {
             idx = beginning
             return false
         }
@@ -564,7 +648,7 @@ private class LocalParser(
     private fun consumeMonth(): Boolean {
         val beginning = idx
 
-        if (consumeWord("农历", "阴历")) {
+        if (consumeWord("农历") || consumeWord("阴历")) {
             throw ParseException("暂不支持农历提醒")
         }
         if (consumeWord("工作日")) {
@@ -572,7 +656,7 @@ private class LocalParser(
         }
 
         val month = consumeDigit()
-        if (month == null || !consumeWord("月", "-", "/", ".")) {
+        if (month == null || !consumeWord("月")) {
             idx = beginning
             return false
         }
@@ -593,7 +677,7 @@ private class LocalParser(
         val beginning = idx
         val day = consumeDigit()
 
-        if (day == null || (!consumeWord("日", "号") && beginning == idx)) {
+        if (day == null || (!consumeWord("日") && !consumeWord("号"))) {
             idx = beginning
             return false
         }
@@ -603,11 +687,14 @@ private class LocalParser(
         }
 
         timeFields["day"] = day
-        consumeWord("(", "（")
-        if (consumeWord("周", "星期")) {
-            if (!consumeWord("日", "天")) consumeDigit()
+
+        // Skip weekday in parentheses
+        if (consumeWord("(") || consumeWord("（")) {
+            if (consumeWord("周")) {
+                consumeWord("日") || consumeWord("天") || consumeDigit()
+            }
+            consumeWord(")") || consumeWord("）")
         }
-        consumeWord(")", "）")
 
         if (!consumeHour()) {
             timeFields["hour"] = 8
@@ -619,14 +706,15 @@ private class LocalParser(
     private fun consumeHour(): Boolean {
         val beginning = idx
 
+        // Time of day keywords
         when {
-            consumeWord("凌晨", "半夜", "夜里", "深夜") -> {
+            consumeWord("凌晨") || consumeWord("半夜") || consumeWord("夜里") || consumeWord("深夜") -> {
                 afternoon = false
                 timeDeltaFields["days"] = (timeDeltaFields["days"] ?: 0) + 1
                 timeFields["hour"] = 0
                 timeFields["minute"] = 0
             }
-            consumeWord("早", "早上", "早晨", "今早", "上午") -> {
+            consumeWord("早") || consumeWord("早上") || consumeWord("早晨") || consumeWord("今早") || consumeWord("上午") -> {
                 afternoon = false
                 timeFields["hour"] = 8
                 timeFields["minute"] = 0
@@ -645,7 +733,7 @@ private class LocalParser(
                 timeFields["hour"] = 18
                 timeFields["minute"] = 0
             }
-            consumeWord("晚上", "今晚") -> {
+            consumeWord("晚上") || consumeWord("今晚") -> {
                 afternoon = true
                 timeFields["hour"] = 20
                 timeFields["minute"] = 0
@@ -655,14 +743,17 @@ private class LocalParser(
         val beginning2 = idx
         val hour = consumeDigit()
 
-        if (hour == null || !consumeWord("点", "点钟", "点整", ":", "：", ".", "時", "时")) {
+        if (hour == null || !consumeWord("点") && !consumeWord("点钟") && !consumeWord("点整")) {
             idx = beginning2
             return idx != beginning
         }
 
+        // Handle afternoon logic
         if (afternoon == true && hour == 0) {
+            // "晚上零点" means next day 0:00
             timeDeltaFields["days"] = (timeDeltaFields["days"] ?: 0) + 1
         } else if (hour < 12) {
+            // If it's currently afternoon and no explicit time context, add 12 hours
             if (afternoon == true || (now.hour >= 12 && !timeFields.containsKey("hour")
                         && !timeDeltaFields.containsKey("days") && repeat.isEmpty())) {
                 timeFields["hour"] = hour + 12
@@ -673,6 +764,7 @@ private class LocalParser(
             timeFields["hour"] = hour
         }
 
+        // Parse minutes
         if (!consumeMinute()) {
             timeFields["minute"] = 0
         }
@@ -685,18 +777,19 @@ private class LocalParser(
         val minute = consumeDigit()
 
         if (minute != null) {
-            if (minute !in 0..60) {
+            if (minute !in 0..59) {
                 throw ParseException("一小时没有${minute}分钟")
             }
             timeFields["minute"] = minute
-            consumeWord("分", "分钟", ":")
-            consumeSecond()
+            if (consumeWord("分") || consumeWord("分钟")) {
+                consumeSecond()
+            }
         } else if (consumeWord("半")) {
             timeFields["minute"] = 30
-        } else if (currentWord() == "1" && peekNextWord() == "刻") {
+        } else if (currentWord() == "1" && peekWord() == "刻") {
             advance(2)
             timeFields["minute"] = 15
-        } else if (currentWord() == "3" && peekNextWord() == "刻") {
+        } else if (currentWord() == "3" && peekWord() == "刻") {
             advance(2)
             timeFields["minute"] = 45
         }
@@ -709,8 +802,8 @@ private class LocalParser(
         val second = consumeDigit()
 
         if (second != null) {
-            if (consumeWord("秒", "秒钟")) {
-                if (second !in 0..60) {
+            if (consumeWord("秒") || consumeWord("秒钟")) {
+                if (second !in 0..59) {
                     throw ParseException("一分钟没有${second}秒")
                 }
                 timeFields["second"] = second
@@ -722,7 +815,8 @@ private class LocalParser(
     }
 
     private fun consumeToEnd() {
-        event = words.drop(idx).joinToString("").replace(Regex("[的。，、！？]"), "").trim()
+        val remaining = words.drop(idx).map { it.word }.joinToString("")
+        event = remaining.replace(Regex("[的。，、！？]"), "").trim()
     }
 
     private fun consumeWord(vararg words: String): Boolean {
@@ -733,19 +827,21 @@ private class LocalParser(
         return false
     }
 
-    private fun consumeDigit(consume: Boolean = true): Int? {
+    private fun currentWord(): String = words.getOrElse(idx) { Token("", false) }.word
+
+    private fun currentIsDigit(): Boolean = words.getOrElse(idx) { Token("", false) }.isDigit
+
+    private fun peekWord(): String = words.getOrElse(idx + 1) { Token("", false) }.word
+
+    private fun consumeDigit(): Int? {
         val word = currentWord()
-        if (word.isNotEmpty() && word.first().isDigit()) {
+        if (words.getOrElse(idx) { Token("", false) }.isDigit && word.toIntOrNull() != null) {
             val digit = word.toInt()
-            if (consume) advance()
+            advance()
             return digit
         }
         return null
     }
-
-    private fun currentWord(): String = words.getOrElse(idx) { "" }
-
-    private fun peekNextWord(): String = words.getOrElse(idx + 1) { "" }
 
     private fun advance(step: Int = 1) {
         idx += step
