@@ -367,7 +367,7 @@ private class LocalParser(
 
         if (consumeWord("(") || consumeWord("（")) {
             if (consumeWord("周", "星期")) {
-                consumeWord("日", "天") || consumeDigit()
+                if (!consumeWord("日", "天")) consumeDigit()
             }
             consumeWord(")") || consumeWord("）")
         }
@@ -578,7 +578,7 @@ private class LocalParser(
         timeFields["day"] = day
         consumeWord("(", "（")
         if (consumeWord("周", "星期")) {
-            consumeWord("日", "天") || consumeDigit()
+            if (!consumeWord("日", "天")) consumeDigit()
         }
         consumeWord(")", "）")
 
