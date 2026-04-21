@@ -63,24 +63,51 @@ private class LocalParser(
 
     private fun tokenize(text: String): List<String> {
         val processed = parseCnNumber(text)
-        return processed
-            .replace("年", " 年 ")
-            .replace("月", " 月 ")
-            .replace("日", " 日 ")
-            .replace("号", " 号 ")
-            .replace("点", " 点 ")
-            .replace("分", " 分 ")
-            .replace("秒", " 秒 ")
-            .replace("周", " 周 ")
-            .replace("星期", " 周 ")
-            .replace("礼拜", " 周 ")
-            .replace("的", " ")
-            .replace("提醒", " ")
-            .replace("后", " 后 ")
-            .replace("每", " 每 ")
-            .replace("隔", " 隔 ")
-            .split(Regex("\\s+"))
-            .filter { it.isNotBlank() }
+        // Use a pattern that keeps digits with their following units
+        val tokens = mutableListOf<String>()
+        val regex = Regex("([年月日周时分秒号]|提醒|每|隔|的|后)")
+        var lastEnd = 0
+
+        for (match in regex.findAll(processed)) {
+            val prefix = processed.substring(lastEnd, match.range.first)
+            if (prefix.isNotBlank()) {
+                // Split remaining text but group consecutive digits
+                groupDigits(tokens, prefix)
+            }
+            val token = match.value
+            if (token.isNotBlank()) {
+                when (token) {
+                    "提醒" -> {} // skip
+                    else -> tokens.add(token)
+                }
+            }
+            lastEnd = match.range.last + 1
+        }
+        // Handle remaining text after last match
+        val suffix = processed.substring(lastEnd)
+        if (suffix.isNotBlank()) {
+            groupDigits(tokens, suffix)
+        }
+
+        return tokens.filter { it.isNotBlank() }
+    }
+
+    private fun groupDigits(tokens: MutableList<String>, text: String) {
+        // Group consecutive digits together with optional leading sign
+        val digitRegex = Regex("(-?\\d+)")
+        var lastEnd = 0
+        for (match in digitRegex.findAll(text)) {
+            val prefix = text.substring(lastEnd, match.range.first)
+            if (prefix.isNotBlank()) {
+                tokens.addAll(prefix.trim().split(Regex("\\s+")).filter { it.isNotBlank() })
+            }
+            tokens.add(match.value)
+            lastEnd = match.range.last + 1
+        }
+        val suffix = text.substring(lastEnd)
+        if (suffix.isNotBlank()) {
+            tokens.addAll(suffix.trim().split(Regex("\\s+")).filter { it.isNotBlank() })
+        }
     }
 
     private fun parseCnNumber(text: String): String {
