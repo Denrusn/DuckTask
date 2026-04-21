@@ -22,7 +22,8 @@ jobs:
 
       - name: Setup Gradle
         run: |
-          cd DuckTask
+          pwd
+          ls -la
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
             mkdir -p gradle/wrapper
             curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar
@@ -31,22 +32,10 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          cd DuckTask
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DuckTask-debug.apk
-          path: DuckTask/app/build/outputs/apk/debug/*.apk
-
-      - name: Download APK for release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: DuckTask/app/build/outputs/apk/debug/*.apk
-          asset_name: DuckTask-${{ github.sha }}.apk
-          asset_content_type: application/vnd.android.package-archive
+          path: app/build/outputs/apk/debug/*.apk
