@@ -691,7 +691,8 @@ private class LocalParser(
         // Skip weekday in parentheses
         if (consumeWord("(") || consumeWord("（")) {
             if (consumeWord("周")) {
-                consumeWord("日") || consumeWord("天") || consumeDigit()
+                consumeWord("日") || consumeWord("天")
+                if (currentIsDigit()) consumeDigit()
             }
             consumeWord(")") || consumeWord("）")
         }
