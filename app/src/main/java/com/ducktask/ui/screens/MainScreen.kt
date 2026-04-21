@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +41,7 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
+    val windowInsets = WindowInsets.systemBars
 
     var showSuccess by remember { mutableStateOf(false) }
 
@@ -63,19 +65,25 @@ fun MainScreen(
                     )
                 )
             )
+            .padding(windowInsets)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
+                .imePadding()
         ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 text = "DuckTask",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 16.dp)
+                modifier = Modifier.padding(vertical = 8.dp)
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             InputCard(
                 inputText = uiState.inputText,
@@ -88,7 +96,7 @@ fun MainScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (tasks.isEmpty()) {
                 EmptyState()
@@ -101,6 +109,7 @@ fun MainScreen(
                 )
 
                 LazyColumn(
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(tasks, key = { it.id }) { task ->
@@ -120,7 +129,8 @@ fun MainScreen(
             exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 80.dp)
+                .statusBarsPadding()
+                .padding(top = 16.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -165,7 +175,7 @@ private fun InputCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(16.dp)
         ) {
             OutlinedTextField(
                 value = inputText,
@@ -206,13 +216,13 @@ private fun InputCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = onSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(52.dp),
                 shape = RoundedCornerShape(16.dp),
                 enabled = !isLoading && inputText.isNotBlank()
             ) {
@@ -335,8 +345,9 @@ private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .weight(1f),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = Icons.Default.Notifications,
