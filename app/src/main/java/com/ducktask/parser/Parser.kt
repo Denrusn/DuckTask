@@ -70,6 +70,7 @@ private class LocalParser(
         "凌晨", "夜里", "深夜", "半夜",
         "早上", "早晨", "上午", "中午",
         "下午", "傍晚", "晚上",
+        "每周", "每两周", "每月", "每年",
         "周一", "周二", "周三", "周四", "周五", "周六", "周日",
         "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日",
         "礼拜一", "礼拜二", "礼拜三", "礼拜四", "礼拜五", "礼拜六", "礼拜日"
@@ -112,8 +113,9 @@ private class LocalParser(
                 char == '后' -> {
                     i++
                 }
-                // Skip 每 when not part of 每周 etc.
-                char == '每' && (i + 1 >= processed.length || processed[i + 1] !in "年月周天") -> {
+                // 每 is a token for repeat
+                char == '每' -> {
+                    tokens.add(Token(char.toString(), false))
                     i++
                 }
                 // Check for multi-character period words
@@ -209,7 +211,7 @@ private class LocalParser(
             // Parse explicit time
             val consumedTime = consumeYear() || consumeMonth() || consumeDay() || consumeHour()
 
-            if (idx != beginning || consumedRepeat || consumedPeriod || consumedWeekday || consumedRelative || consumedTime) {
+            if (idx != beginning || consumedRepeat) {
                 // Time was found or repeat was set
                 consumeWord("准时", "是")
 
@@ -744,7 +746,7 @@ private class LocalParser(
         val beginning2 = idx
         val hour = consumeDigit()
 
-        if (hour == null || !consumeWord("点") && !consumeWord("点钟") && !consumeWord("点整")) {
+        if (hour == null || (!consumeWord("点") && !consumeWord("点钟") && !consumeWord("点整"))) {
             idx = beginning2
             return idx != beginning
         }
