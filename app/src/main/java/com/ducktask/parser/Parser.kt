@@ -180,7 +180,7 @@ private class RuleParser(
     }
 
     private fun parseRepeat() {
-        Regex("每(?:隔)?(?:\\d+)?(?:分|分钟)").find(text)?.let {
+        Regex("每(?:隔)?(?:\\d+)?(?:分钟|分)").find(text)?.let {
             throw ParseException("暂不支持分钟级别的重复提醒")
         }
 
@@ -443,7 +443,7 @@ private class RuleParser(
             return
         }
 
-        val pointTime = Regex("(\\d{1,2})(?:点钟|点整|点|时)(?:(\\d{1,2})(?:分|分钟)?|半(?=$|\\s|提醒|叫我|请|，|。|！|？|,|\\.)|(1刻)|(3刻))?(?:(\\d{1,2})秒(?:钟)?)?").find(text)
+        val pointTime = Regex("(\\d{1,2})(?:点钟|点整|点|时)(?:(\\d{1,2})(?:分钟|分)?|半(?=$|\\s|提醒|叫我|请|，|。|！|？|,|\\.)|(1刻)|(3刻))?(?:(\\d{1,2})秒(?:钟)?)?").find(text)
             ?: return
         val minute = when {
             pointTime.groupValues[2].isNotBlank() -> pointTime.groupValues[2].toInt()
