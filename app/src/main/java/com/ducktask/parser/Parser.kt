@@ -557,7 +557,8 @@ private class RuleParser(
         }
 
         return remaining
-            .replace(Regex("提醒我|提醒|叫我|请|准时|是"), "")
+            .replace(Regex("提醒我|提醒|叫我|准时|是"), "")
+            .replace(Regex("^请"), "")
             .replace(Regex("[\\s的了在，。！？、,.?！“”\"'（）()]"), "")
             .trim()
     }
