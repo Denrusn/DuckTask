@@ -1,47 +1,55 @@
-package com.ducktask.data.repository
+package com.ducktask.app.data.repository
 
-import com.ducktask.data.local.TaskDao
-import com.ducktask.domain.model.Task
-import com.ducktask.parser.ParsedResult
-import com.ducktask.parser.TimeParser
+import com.ducktask.app.data.local.TaskDao
+import com.ducktask.app.domain.model.DEFAULT_USER_ID
+import com.ducktask.app.domain.model.Task
+import com.ducktask.app.domain.model.TaskStatus
+import com.ducktask.app.domain.model.TRIGGER_TYPE_DATE
+import com.ducktask.app.parser.TimeParser
+import com.ducktask.app.scheduler.ReminderScheduler
+import com.ducktask.app.util.toEpochMillis
 import kotlinx.coroutines.flow.Flow
 
-class TaskRepository(private val taskDao: TaskDao) {
+class TaskRepository(
+    private val taskDao: TaskDao,
+    private val scheduler: ReminderScheduler
+) {
+    fun getAllPendingTasks(): Flow<List<Task>> = taskDao.observePendingTasks()
 
-    fun getAllPendingTasks(): Flow<List<Task>> = taskDao.getAllPendingTasks()
-
-    fun getAllTasks(): Flow<List<Task>> = taskDao.getAllTasks()
+    fun getAllTasks(): Flow<List<Task>> = taskDao.observeAllTasks()
 
     suspend fun getTaskById(id: Long): Task? = taskDao.getTaskById(id)
 
     suspend fun createTaskFromText(text: String): Result<Task> {
-        return try {
+        return runCatching {
             val parsed = TimeParser.parse(text)
+            val repeat = parsed.repeat?.takeIf { it.isRepeating() }
+            val firstRunTime = parsed.time.toEpochMillis()
             val task = Task(
-                time = parsed.time,
+                userId = DEFAULT_USER_ID,
                 event = parsed.event,
-                desc = text,
-                repeatYears = parsed.repeat?.years ?: 0,
-                repeatMonths = parsed.repeat?.months ?: 0,
-                repeatWeeks = parsed.repeat?.weeks ?: 0,
-                repeatDays = parsed.repeat?.days ?: 0,
-                repeatHours = parsed.repeat?.hours ?: 0,
-                repeatMinutes = parsed.repeat?.minutes ?: 0
+                description = parsed.description,
+                reminderTime = firstRunTime,
+                repeat = repeat?.toJson(),
+                triggerType = repeat?.triggerType() ?: TRIGGER_TYPE_DATE,
+                nextRunTime = firstRunTime
             )
             val id = taskDao.insert(task)
-            Result.success(task.copy(id = id))
-        } catch (e: Exception) {
-            Result.failure(e)
+            task.copy(id = id).also(scheduler::schedule)
         }
     }
 
-    suspend fun createTask(task: Task): Long = taskDao.insert(task)
+    suspend fun deleteTask(task: Task) {
+        scheduler.cancel(task.taskId)
+        taskDao.update(task.copy(status = TaskStatus.DELETED))
+    }
 
-    suspend fun updateTask(task: Task) = taskDao.update(task)
+    suspend fun markAsDone(task: Task) {
+        scheduler.cancel(task.taskId)
+        taskDao.update(task.copy(status = TaskStatus.COMPLETED))
+    }
 
-    suspend fun deleteTask(task: Task) = taskDao.delete(task)
-
-    suspend fun deleteTaskById(id: Long) = taskDao.deleteById(id)
-
-    suspend fun markAsDone(id: Long) = taskDao.markAsDone(id)
+    suspend fun reschedulePendingTasks() {
+        scheduler.reschedule(taskDao.getPendingTasksSnapshot())
+    }
 }

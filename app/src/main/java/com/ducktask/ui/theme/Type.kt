@@ -1,4 +1,4 @@
-package com.ducktask.ui.theme
+package com.ducktask.app.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

@@ -1,55 +1,43 @@
-package com.ducktask
+package com.ducktask.app
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import androidx.core.app.NotificationCompat
+import com.ducktask.app.data.local.AppDatabase
+import com.ducktask.app.domain.model.TaskStatus
+import com.ducktask.app.notification.DuckTaskNotifications
+import com.ducktask.app.scheduler.ReminderScheduler
+import com.ducktask.app.util.nextRunAfter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val taskId = intent.getLongExtra("task_id", -1)
-        val event = intent.getStringExtra("event") ?: "提醒"
-        val desc = intent.getStringExtra("desc") ?: ""
+        if (intent.action != ReminderScheduler.ACTION_REMINDER) return
+        val taskId = intent.getStringExtra(ReminderScheduler.EXTRA_TASK_ID) ?: return
+        val pendingResult = goAsync()
 
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val dao = AppDatabase.getInstance(context).taskDao()
+                val task = dao.getTaskByTaskId(taskId) ?: return@launch
+                if (task.status != TaskStatus.PENDING) return@launch
 
-        // Create notification channel for Android O+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "DuckTask 提醒",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "任务提醒通知"
-                enableVibration(true)
+                val repeat = task.repeatRule()
+                if (repeat?.isRepeating() == true) {
+                    val nextRunTime = repeat.nextRunAfter(task.nextRunTime)
+                    val updatedTask = task.copy(nextRunTime = nextRunTime)
+                    dao.update(updatedTask)
+                    ReminderScheduler(context.applicationContext).schedule(updatedTask)
+                    DuckTaskNotifications.showReminder(context, task, nextRunTime)
+                } else {
+                    dao.update(task.copy(status = TaskStatus.COMPLETED))
+                    DuckTaskNotifications.showReminder(context, task, null)
+                }
+            } finally {
+                pendingResult.finish()
             }
-            notificationManager.createNotificationChannel(channel)
         }
-
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            taskId.toInt(),
-            Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
-            .setContentTitle(event)
-            .setContentText(desc.ifBlank { "点击查看详情" })
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        notificationManager.notify(taskId.toInt(), notification)
-    }
-
-    companion object {
-        const val CHANNEL_ID = "ducktask_reminders"
     }
 }

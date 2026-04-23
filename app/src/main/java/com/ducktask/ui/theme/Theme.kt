@@ -1,4 +1,4 @@
-package com.ducktask.ui.theme
+package com.ducktask.app.ui.theme
 
 import android.app.Activity
 import android.os.Build

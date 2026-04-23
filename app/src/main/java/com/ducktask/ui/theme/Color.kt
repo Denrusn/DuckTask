@@ -1,4 +1,4 @@
-package com.ducktask.ui.theme
+package com.ducktask.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

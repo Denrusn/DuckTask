@@ -1,6 +1,7 @@
 name: Build APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master ]
   pull_request:
@@ -21,18 +22,16 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        run: |
-          pwd
-          ls -la
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            mkdir -p gradle/wrapper
-            curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar
-          fi
-          chmod +x gradlew
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.4
+
+      - name: Run Unit Tests
+        run: gradle testDebugUnitTest --no-daemon
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

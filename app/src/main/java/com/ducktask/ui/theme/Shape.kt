@@ -1,4 +1,4 @@
-package com.ducktask.ui.theme
+package com.ducktask.app.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes

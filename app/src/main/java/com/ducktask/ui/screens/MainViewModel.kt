@@ -1,20 +1,24 @@
-package com.ducktask.ui.screens
+package com.ducktask.app.ui.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.ducktask.data.repository.TaskRepository
-import com.ducktask.domain.model.Task
-import kotlinx.coroutines.flow.*
+import com.ducktask.app.data.repository.TaskRepository
+import com.ducktask.app.domain.model.Task
+import com.ducktask.app.util.formatReminderTime
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class MainUiState(
-    val tasks: List<Task> = emptyList(),
     val inputText: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val successMessage: String? = null,
-    val parsedTime: String? = null
+    val successMessage: String? = null
 )
 
 sealed class MainUiEvent {
@@ -22,17 +26,15 @@ sealed class MainUiEvent {
     data object SubmitTask : MainUiEvent()
     data class DeleteTask(val task: Task) : MainUiEvent()
     data class MarkDone(val task: Task) : MainUiEvent()
-    data object ClearError : MainUiEvent()
     data object ClearSuccess : MainUiEvent()
 }
 
 class MainViewModel(private val repository: TaskRepository) : ViewModel() {
-
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     val pendingTasks: StateFlow<List<Task>> = repository.getAllPendingTasks()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun onEvent(event: MainUiEvent) {
         when (event) {
@@ -42,7 +44,6 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
             MainUiEvent.SubmitTask -> submitTask()
             is MainUiEvent.DeleteTask -> deleteTask(event.task)
             is MainUiEvent.MarkDone -> markDone(event.task)
-            MainUiEvent.ClearError -> _uiState.update { it.copy(errorMessage = null) }
             MainUiEvent.ClearSuccess -> _uiState.update { it.copy(successMessage = null) }
         }
     }
@@ -55,18 +56,14 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val result = repository.createTaskFromText(text)
-            result.fold(
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            repository.createTaskFromText(text).fold(
                 onSuccess = { task ->
-                    val timeStr = formatTime(task.time)
                     _uiState.update {
                         it.copy(
                             inputText = "",
                             isLoading = false,
-                            successMessage = "已设置${timeStr}的提醒",
-                            parsedTime = timeStr,
-                            errorMessage = null
+                            successMessage = "DuckTask 将在 ${formatReminderTime(task.nextRunTime)} 提醒你${task.event}"
                         )
                     }
                 },
@@ -74,7 +71,7 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "解析失败"
+                            errorMessage = error.message ?: "解析失败，请换一种说法"
                         )
                     }
                 }
@@ -90,21 +87,7 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
 
     private fun markDone(task: Task) {
         viewModelScope.launch {
-            repository.markAsDone(task.id)
-        }
-    }
-
-    private fun formatTime(time: java.time.LocalDateTime): String {
-        val now = java.time.LocalDateTime.now()
-        val days = java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), time.toLocalDate())
-        val timeStr = time.toLocalTime().toString().substring(0, 5)
-
-        return when {
-            days == 0L -> "今天 $timeStr"
-            days == 1L -> "明天 $timeStr"
-            days == 2L -> "后天 $timeStr"
-            days < 7 -> "${time.dayOfWeek.name.replace("DAY", "").lowercase()} $timeStr"
-            else -> "${time.month.value}月${time.dayOfMonth}日 $timeStr"
+            repository.markAsDone(task)
         }
     }
 

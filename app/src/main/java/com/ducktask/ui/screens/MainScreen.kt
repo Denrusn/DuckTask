@@ -1,4 +1,4 @@
-package com.ducktask.ui.screens
+package com.ducktask.app.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -28,10 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.ducktask.domain.model.Task
-import com.ducktask.ui.theme.*
+import com.ducktask.app.domain.model.Task
+import com.ducktask.app.ui.theme.DuckOrange
+import com.ducktask.app.ui.theme.Error
+import com.ducktask.app.ui.theme.Success
+import com.ducktask.app.util.formatReminderTime
 import kotlinx.coroutines.delay
-import java.time.format.DateTimeFormatter
 
 @Composable
 fun MainScreen(
@@ -183,7 +185,7 @@ private fun InputCard(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
                     Text(
-                        "输入提醒内容，如：明天下午3点开会",
+                        "输入提醒内容，如：周五晚上提醒我打电话给老妈",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 },
@@ -292,7 +294,7 @@ private fun TaskCard(
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = formatTaskTime(task),
+                            text = formatReminderTime(task.nextRunTime),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -361,25 +363,13 @@ private fun EmptyState() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "输入如\"明天下午3点开会\"来创建提醒",
+            text = "输入如“明天下午3点提醒我开会”来创建提醒",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
         )
     }
 }
 
-private fun formatTaskTime(task: Task): String {
-    val formatter = DateTimeFormatter.ofPattern("MM月dd日 HH:mm")
-    return task.time.format(formatter)
-}
-
 private fun getRepeatText(task: Task): String {
-    return when {
-        task.repeatYears > 0 -> "每${task.repeatYears}年"
-        task.repeatMonths > 0 -> "每${task.repeatMonths}月"
-        task.repeatWeeks > 0 -> "每${task.repeatWeeks}周"
-        task.repeatDays > 0 -> "每${task.repeatDays}天"
-        task.repeatHours > 0 -> "每${task.repeatHours}小时"
-        else -> ""
-    }
+    return task.repeatRule()?.toHumanText().orEmpty()
 }
