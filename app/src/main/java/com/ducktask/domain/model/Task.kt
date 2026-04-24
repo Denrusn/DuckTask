@@ -3,6 +3,7 @@ package com.ducktask.app.domain.model
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.Locale
 import org.json.JSONObject
 import java.util.UUID
 
@@ -15,6 +16,13 @@ object TaskStatus {
     const val PENDING = 0
     const val COMPLETED = 1
     const val DELETED = 2
+}
+
+object ReminderMode {
+    const val NORMAL = 0
+    const val STRONG = 1
+
+    fun label(mode: Int): String = if (mode == STRONG) "强提醒" else "普通提醒"
 }
 
 @Entity(
@@ -30,6 +38,7 @@ data class Task(
     val description: String,
     val reminderTime: Long,
     val repeat: String? = null,
+    val reminderMode: Int = ReminderMode.NORMAL,
     val triggerType: String = TRIGGER_TYPE_DATE,
     val status: Int = TaskStatus.PENDING,
     val createTime: Long = System.currentTimeMillis(),
@@ -38,6 +47,35 @@ data class Task(
     fun repeatRule(): RepeatRule? = repeat?.let(RepeatRule::fromJson)
 
     fun hasRepeat(): Boolean = repeatRule()?.isRepeating() == true
+
+    fun reminderModeLabel(): String = ReminderMode.label(reminderMode)
+}
+
+@Entity(
+    tableName = "reminder_execution_logs",
+    indices = [Index(value = ["taskId"]), Index(value = ["triggeredAt"])]
+)
+data class ReminderExecutionLog(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val taskId: String,
+    val event: String,
+    val description: String,
+    val reminderMode: Int,
+    val triggeredAt: Long,
+    val nextRunTime: Long? = null,
+    val acknowledgedAt: Long? = null,
+    val dismissMethod: String? = null
+) {
+    fun reminderModeLabel(): String = ReminderMode.label(reminderMode)
+
+    fun dismissMethodLabel(): String {
+        return when (dismissMethod?.lowercase(Locale.ROOT)) {
+            "notification" -> "通知栏确认"
+            "popup" -> "弹窗确认"
+            else -> "待处理"
+        }
+    }
 }
 
 data class RepeatRule(

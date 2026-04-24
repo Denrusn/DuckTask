@@ -15,7 +15,9 @@ class DuckTaskApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     val scheduler: ReminderScheduler by lazy { ReminderScheduler(this) }
-    val repository: TaskRepository by lazy { TaskRepository(database.taskDao(), scheduler) }
+    val repository: TaskRepository by lazy {
+        TaskRepository(database.taskDao(), database.reminderLogDao(), scheduler)
+    }
 
     override fun onCreate() {
         super.onCreate()

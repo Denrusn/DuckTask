@@ -28,6 +28,9 @@ interface TaskDao {
     @Query("SELECT * FROM reminder_tasks WHERE taskId = :taskId LIMIT 1")
     suspend fun getTaskByTaskId(taskId: String): Task?
 
+    @Query("SELECT * FROM reminder_tasks WHERE taskId = :taskId LIMIT 1")
+    suspend fun findTaskForEdit(taskId: String): Task?
+
     @Query(
         """
         SELECT * FROM reminder_tasks

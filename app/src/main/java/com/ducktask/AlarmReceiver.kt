@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.ducktask.app.data.local.AppDatabase
+import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
@@ -20,7 +21,9 @@ class AlarmReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val dao = AppDatabase.getInstance(context).taskDao()
+                val database = AppDatabase.getInstance(context)
+                val dao = database.taskDao()
+                val logDao = database.reminderLogDao()
                 val task = dao.getTaskByTaskId(taskId) ?: return@launch
                 if (task.status != TaskStatus.PENDING) return@launch
 
@@ -29,11 +32,30 @@ class AlarmReceiver : BroadcastReceiver() {
                     val nextRunTime = repeat.nextRunAfter(task.nextRunTime)
                     val updatedTask = task.copy(nextRunTime = nextRunTime)
                     dao.update(updatedTask)
+                    val logId = logDao.insert(
+                        ReminderExecutionLog(
+                            taskId = task.taskId,
+                            event = task.event,
+                            description = task.description,
+                            reminderMode = task.reminderMode,
+                            triggeredAt = System.currentTimeMillis(),
+                            nextRunTime = nextRunTime
+                        )
+                    )
                     ReminderScheduler(context.applicationContext).schedule(updatedTask)
-                    DuckTaskNotifications.showReminder(context, task, nextRunTime)
+                    DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
                 } else {
                     dao.update(task.copy(status = TaskStatus.COMPLETED))
-                    DuckTaskNotifications.showReminder(context, task, null)
+                    val logId = logDao.insert(
+                        ReminderExecutionLog(
+                            taskId = task.taskId,
+                            event = task.event,
+                            description = task.description,
+                            reminderMode = task.reminderMode,
+                            triggeredAt = System.currentTimeMillis()
+                        )
+                    )
+                    DuckTaskNotifications.showReminder(context, task, null, logId)
                 }
             } finally {
                 pendingResult.finish()
