@@ -4,13 +4,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.After
 import org.junit.Test
+import java.time.Clock
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 class TimeParserTest {
+    private val zone = ZoneId.of("Asia/Shanghai")
+    private val fixed = LocalDateTime.of(2026, 4, 24, 12, 15)
     private val morning = LocalDateTime.of(2026, 4, 24, 2, 15)
     private val noon = LocalDateTime.of(2026, 4, 24, 12, 15)
+    private val clock = Clock.fixed(fixed.atZone(zone).toInstant(), zone)
+
+    @After
+    fun cleanup() {
+        TimeParser.resetClock()
+    }
 
     @Test
     fun normalizesChineseNumbersLikeReferenceParser() {
@@ -25,6 +36,7 @@ class TimeParserTest {
 
     @Test
     fun parsesImplicitMorningAndAfternoonHours() {
+        TimeParser.setClock(clock)
         val early = TimeParser.parse("三点四十五分钟提醒我还二百三十四块钱", morning)
         assertEquals(3, early.time.hour)
         assertEquals(45, early.time.minute)
@@ -38,6 +50,7 @@ class TimeParserTest {
 
     @Test
     fun parsesRelativeMinuteAndSecondDurations() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("一分五十九秒后提醒我", noon)
         assertEquals(119, ChronoUnit.SECONDS.between(noon, parsed.time))
         assertEquals("闹钟", parsed.event)
@@ -45,6 +58,7 @@ class TimeParserTest {
 
     @Test
     fun parsesHalfHourDurationAndEvent() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("半个钟头后提醒我同步", noon)
         assertEquals(30, ChronoUnit.MINUTES.between(noon, parsed.time))
         assertEquals("同步", parsed.event)
@@ -52,6 +66,7 @@ class TimeParserTest {
 
     @Test
     fun keepsHalfWhenItStartsTheEventText() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("今晚八点半导体制冷片", noon)
         assertEquals(20, parsed.time.hour)
         assertEquals(0, parsed.time.minute)
@@ -60,6 +75,7 @@ class TimeParserTest {
 
     @Test
     fun parsesWeekdayEveningWithHalfHour() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("周日晚上八点半提醒我找入团申请", noon)
         assertEquals(7, parsed.time.dayOfWeek.value)
         assertEquals(20, parsed.time.hour)
@@ -69,6 +85,7 @@ class TimeParserTest {
 
     @Test
     fun parsesMonthRepeatAndRollsToNextMonthWhenNeeded() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse(
             "每月20号提醒我还信用卡",
             LocalDateTime.of(2026, 4, 21, 8, 0)
@@ -81,6 +98,7 @@ class TimeParserTest {
 
     @Test
     fun parsesEveryMonthAliasAndUsesNextCycleWhenCurrentDayHasPassed() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse(
             "每个月1日早上1十点提醒我还款",
             LocalDateTime.of(2026, 4, 24, 9, 0)
@@ -95,6 +113,7 @@ class TimeParserTest {
 
     @Test
     fun parsesWeeklyRepeat() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("每两周周一上午10点", noon)
         assertEquals(1, parsed.time.dayOfWeek.value)
         assertEquals(10, parsed.time.hour)
@@ -103,6 +122,7 @@ class TimeParserTest {
 
     @Test
     fun rejectsUnsupportedRangesAndLunarDates() {
+        TimeParser.setClock(clock)
         assertThrows(ParseException::class.java) {
             TimeParser.parse("星期一到星期五提醒我早上六点半起床", noon)
         }
@@ -113,6 +133,7 @@ class TimeParserTest {
 
     @Test
     fun rejectsImpossibleCalendarDates() {
+        TimeParser.setClock(clock)
         assertThrows(ParseException::class.java) {
             TimeParser.parse("六月三十一号提醒我交材料", noon)
         }
@@ -120,6 +141,7 @@ class TimeParserTest {
 
     @Test
     fun rejectsUnparseableText() {
+        TimeParser.setClock(clock)
         assertThrows(ParseException::class.java) {
             TimeParser.parse("哈哈哈哈哈哈", noon)
         }
@@ -127,6 +149,7 @@ class TimeParserTest {
 
     @Test
     fun rejectsMinuteRepeatAndTooFrequentHourRepeat() {
+        TimeParser.setClock(clock)
         assertThrows(ParseException::class.java) {
             TimeParser.parse("每分钟提醒我一次", noon)
         }
@@ -137,6 +160,7 @@ class TimeParserTest {
 
     @Test
     fun parsesIsoLikeDateTime() {
+        TimeParser.setClock(clock)
         val parsed = TimeParser.parse("2026-12-16 09:10:00提醒我提交材料", noon)
         assertEquals(2026, parsed.time.year)
         assertEquals(12, parsed.time.monthValue)
@@ -148,6 +172,7 @@ class TimeParserTest {
 
     @Test
     fun parseFailureIsExceptionNotNullResult() {
+        TimeParser.setClock(clock)
         val failure = runCatching { TimeParser.parse("哈哈哈哈哈哈", noon) }.exceptionOrNull()
         assertNotNull(failure)
         assertNull(failure?.cause)

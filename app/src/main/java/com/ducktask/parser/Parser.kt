@@ -112,11 +112,21 @@ object ChineseNumberNormalizer {
 }
 
 object TimeParser {
-    fun parse(text: String): ParsedResult = parse(text, LocalDateTime.now(DUCK_TIME_ZONE))
+    private var testClock: java.time.Clock? = null
+
+    fun parse(text: String): ParsedResult = parse(text, LocalDateTime.now(testClock ?: DUCK_TIME_ZONE))
 
     fun parse(text: String, now: LocalDateTime): ParsedResult {
         val parser = RuleParser(text, now.withNano(0))
         return parser.parse()
+    }
+
+    fun setClock(clock: java.time.Clock) {
+        testClock = clock
+    }
+
+    fun resetClock() {
+        testClock = null
     }
 }
 
