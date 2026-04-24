@@ -1,6 +1,7 @@
 package com.ducktask.app
 
 import android.app.Application
+import android.content.Intent
 import android.content.IntentFilter
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.data.repository.TaskRepository
