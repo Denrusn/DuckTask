@@ -8,7 +8,7 @@ import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
-import com.ducktask.app.util.formatReminderTime
+import com.ducktask.app.util.formatAbsoluteTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +79,7 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            successMessage = "已更新为 ${formatReminderTime(updatedTask.nextRunTime)} 的${updatedTask.reminderModeLabel()}"
+                            successMessage = "已更新，下一次执行：${formatAbsoluteTime(updatedTask.nextRunTime)} · ${updatedTask.reminderModeLabel()}"
                         )
                     }
                     onResult(true)
@@ -112,7 +112,7 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
                         it.copy(
                             inputText = "",
                             isLoading = false,
-                            successMessage = "DuckTask 将在 ${formatReminderTime(task.nextRunTime)} 以${task.reminderModeLabel()}提醒你${task.event}"
+                            successMessage = "已创建提醒，下一次执行：${formatAbsoluteTime(task.nextRunTime)} · ${task.reminderModeLabel()} · ${task.event}"
                         )
                     }
                 },

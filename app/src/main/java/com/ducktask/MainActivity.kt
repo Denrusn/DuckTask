@@ -95,20 +95,36 @@ class MainActivity : ComponentActivity() {
                 }
             }
             AppPermissionType.EXACT_ALARM,
-            AppPermissionType.FULL_SCREEN -> {
+            AppPermissionType.FULL_SCREEN,
+            AppPermissionType.BATTERY_OPTIMIZATION,
+            AppPermissionType.AUTO_START -> {
                 launchSettings(type)
             }
         }
     }
 
     private fun launchSettings(type: AppPermissionType) {
+        for (intent in PermissionUtils.buildSettingsIntents(this, type)) {
+            val launched = runCatching {
+                settingsLauncher.launch(intent)
+                true
+            }.getOrElse { false }
+            if (launched) return
+        }
+
+        val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:$packageName")
+        }
         runCatching {
-            settingsLauncher.launch(PermissionUtils.buildSettingsIntent(this, type))
-        }.onFailure {
-            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:$packageName")
-            }
             settingsLauncher.launch(fallback)
+        }.onFailure {
+            permissionIssues = permissionIssues.mapNotNull { issue ->
+                if (issue.type == type) {
+                    issue.copy(description = "${issue.description} 当前机型未找到直达设置入口，请在系统应用详情页手动开启。")
+                } else {
+                    issue
+                }
+            }
         }
     }
 }

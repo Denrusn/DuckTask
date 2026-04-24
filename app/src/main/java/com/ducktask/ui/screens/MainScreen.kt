@@ -1,11 +1,14 @@
 package com.ducktask.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -116,6 +120,15 @@ fun MainScreen(
     val currentDestination = MainDestination.valueOf(destination)
     val currentLogTab = LogTab.valueOf(logTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
+    val openLogTab: (LogTab) -> Unit = {
+        logTab = it.name
+        destination = MainDestination.LOGS.name
+    }
+
+    BackHandler(enabled = currentDestination != MainDestination.HOME) {
+        editingTaskId = null
+        destination = MainDestination.HOME.name
+    }
 
     LaunchedEffect(uiState.successMessage) {
         if (uiState.successMessage != null) {
@@ -163,7 +176,7 @@ fun MainScreen(
                 },
                 actions = {
                     if (currentDestination == MainDestination.HOME) {
-                        IconButton(onClick = { destination = MainDestination.LOGS.name }) {
+                        IconButton(onClick = { openLogTab(LogTab.EXECUTION) }) {
                             Icon(Icons.Default.History, contentDescription = "执行记录")
                         }
                     }
@@ -190,6 +203,10 @@ fun MainScreen(
                         focusManager.clearFocus()
                         viewModel.onEvent(MainUiEvent.SubmitTask)
                     },
+                    executionLogCount = executionLogs.size,
+                    runtimeLogCount = runtimeLogs.size,
+                    onOpenExecutionLogs = { openLogTab(LogTab.EXECUTION) },
+                    onOpenRuntimeLogs = { openLogTab(LogTab.RUNTIME) },
                     onDelete = { viewModel.onEvent(MainUiEvent.DeleteTask(it)) },
                     onDone = { viewModel.onEvent(MainUiEvent.MarkDone(it)) },
                     onEdit = {
@@ -300,6 +317,10 @@ private fun HomeContent(
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
     onSubmit: () -> Unit,
+    executionLogCount: Int,
+    runtimeLogCount: Int,
+    onOpenExecutionLogs: () -> Unit,
+    onOpenRuntimeLogs: () -> Unit,
     onDelete: (Task) -> Unit,
     onDone: (Task) -> Unit,
     onEdit: (Task) -> Unit
@@ -323,6 +344,14 @@ private fun HomeContent(
             onInputChange = onInputChange,
             onReminderModeChange = onReminderModeChange,
             onSubmit = onSubmit
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        LogShortcutRow(
+            executionLogCount = executionLogCount,
+            runtimeLogCount = runtimeLogCount,
+            onOpenExecutionLogs = onOpenExecutionLogs,
+            onOpenRuntimeLogs = onOpenRuntimeLogs
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -366,7 +395,7 @@ private fun PermissionIssueCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.Warning, contentDescription = null)
-                Text("权限检查", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("运行保障", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             permissionIssues.forEach { issue ->
                 Card(shape = RoundedCornerShape(18.dp)) {
@@ -389,6 +418,77 @@ private fun PermissionIssueCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LogShortcutRow(
+    executionLogCount: Int,
+    runtimeLogCount: Int,
+    onOpenExecutionLogs: () -> Unit,
+    onOpenRuntimeLogs: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        QuickEntryCard(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Default.History,
+            title = "执行记录",
+            subtitle = if (executionLogCount == 0) "暂无触发记录" else "已记录 $executionLogCount 条提醒触发",
+            tint = MaterialTheme.colorScheme.primary,
+            onClick = onOpenExecutionLogs
+        )
+        QuickEntryCard(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Default.Description,
+            title = "运行日志",
+            subtitle = if (runtimeLogCount == 0) "暂无错误日志" else "可复制 $runtimeLogCount 条调试日志",
+            tint = DuckOrange,
+            onClick = onOpenRuntimeLogs
+        )
+    }
+}
+
+@Composable
+private fun QuickEntryCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.18f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = tint.copy(alpha = 0.14f)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.padding(10.dp),
+                    tint = tint
+                )
+            }
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
+            )
         }
     }
 }
@@ -496,13 +596,15 @@ private fun TaskCard(
     onDone: () -> Unit,
     onEdit: () -> Unit
 ) {
+    val accent = if (task.reminderMode == ReminderMode.STRONG) Error else DuckOrange
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.06f)),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -516,19 +618,36 @@ private fun TaskCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    if (task.description.isNotBlank() && task.description != task.event) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = task.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(
                             imageVector = Icons.Default.AccessTime,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = accent
                         )
-                        Text(
-                            text = formatReminderTime(task.nextRunTime),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "下次执行：${formatAbsoluteTime(task.nextRunTime)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+                            )
+                            Text(
+                                text = formatReminderTime(task.nextRunTime),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -646,32 +765,116 @@ private fun ExecutionLogContent(logs: List<ReminderExecutionLog>) {
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { Spacer(modifier = Modifier.height(12.dp)) }
         items(logs, key = { it.id }) { log ->
-            Card(shape = RoundedCornerShape(18.dp)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(log.event, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("触发时间：${formatAbsoluteTime(log.triggeredAt)}", style = MaterialTheme.typography.bodyMedium)
-                    Text("提醒方式：${log.reminderModeLabel()}", style = MaterialTheme.typography.bodyMedium)
-                    log.nextRunTime?.let {
-                        Text("下次提醒：${formatAbsoluteTime(it)}", style = MaterialTheme.typography.bodyMedium)
+            val accent = if (log.reminderMode == ReminderMode.STRONG) Error else DuckOrange
+            val statusTone = if (log.acknowledgedAt != null) Success else DuckOrange
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.16f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(log.event, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "触发于 ${formatAbsoluteTime(log.triggeredAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
+                            )
+                        }
+                        LogChip(text = log.reminderModeLabel(), tone = accent)
                     }
-                    Text("处理状态：${log.dismissMethodLabel()}", style = MaterialTheme.typography.bodyMedium)
-                    log.acknowledgedAt?.let {
-                        Text("处理时间：${formatAbsoluteTime(it)}", style = MaterialTheme.typography.bodyMedium)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LogChip(text = log.dismissMethodLabel(), tone = statusTone)
+                        log.nextRunTime?.let {
+                            LogChip(
+                                text = "下次 ${formatReminderTime(it)}",
+                                tone = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
-                    if (log.description.isNotBlank()) {
-                        Text(log.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ExecutionMetaRow(label = "提醒方式", value = log.reminderModeLabel())
+                            ExecutionMetaRow(label = "处理状态", value = log.dismissMethodLabel())
+                            log.nextRunTime?.let {
+                                ExecutionMetaRow(label = "下次执行", value = formatAbsoluteTime(it))
+                            }
+                            log.acknowledgedAt?.let {
+                                ExecutionMetaRow(label = "处理时间", value = formatAbsoluteTime(it))
+                            }
+                            if (log.description.isNotBlank()) {
+                                Text(
+                                    text = "备注",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
+                                )
+                                Text(
+                                    text = log.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
         item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun LogChip(text: String, tone: Color) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tone.copy(alpha = 0.14f)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = tone,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun ExecutionMetaRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.84f)
+        )
     }
 }
 
