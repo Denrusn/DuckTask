@@ -29,7 +29,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
@@ -63,11 +65,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
@@ -87,12 +92,18 @@ private enum class MainDestination {
     LOGS
 }
 
+private enum class LogTab {
+    EXECUTION,
+    RUNTIME
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainViewModel,
     tasks: List<Task>,
     executionLogs: List<ReminderExecutionLog>,
+    runtimeLogs: List<AppRuntimeLog>,
     permissionIssues: List<AppPermissionIssue>,
     onResolvePermission: (AppPermissionType) -> Unit
 ) {
@@ -100,8 +111,10 @@ fun MainScreen(
     val focusManager = LocalFocusManager.current
     var destination by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
     var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+    var logTab by rememberSaveable { mutableStateOf(LogTab.EXECUTION.name) }
     var showSuccess by remember { mutableStateOf(false) }
     val currentDestination = MainDestination.valueOf(destination)
+    val currentLogTab = LogTab.valueOf(logTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
 
     LaunchedEffect(uiState.successMessage) {
@@ -131,7 +144,7 @@ fun MainScreen(
                         text = when (currentDestination) {
                             MainDestination.HOME -> "DuckTask"
                             MainDestination.EDIT -> "编辑提醒"
-                            MainDestination.LOGS -> "执行记录"
+                            MainDestination.LOGS -> "日志中心"
                         },
                         fontWeight = FontWeight.Bold
                     )
@@ -202,7 +215,12 @@ fun MainScreen(
                         }
                     )
                 }
-                MainDestination.LOGS -> ExecutionLogContent(logs = executionLogs)
+                MainDestination.LOGS -> LogPageContent(
+                    executionLogs = executionLogs,
+                    runtimeLogs = runtimeLogs,
+                    currentLogTab = currentLogTab,
+                    onLogTabChange = { logTab = it.name }
+                )
             }
 
             AnimatedVisibility(
@@ -236,6 +254,39 @@ fun MainScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LogPageContent(
+    executionLogs: List<ReminderExecutionLog>,
+    runtimeLogs: List<AppRuntimeLog>,
+    currentLogTab: LogTab,
+    onLogTabChange: (LogTab) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilterChip(
+                selected = currentLogTab == LogTab.EXECUTION,
+                onClick = { onLogTabChange(LogTab.EXECUTION) },
+                label = { Text("执行记录") }
+            )
+            FilterChip(
+                selected = currentLogTab == LogTab.RUNTIME,
+                onClick = { onLogTabChange(LogTab.RUNTIME) },
+                label = { Text("运行日志") }
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        when (currentLogTab) {
+            LogTab.EXECUTION -> ExecutionLogContent(logs = executionLogs)
+            LogTab.RUNTIME -> RuntimeLogContent(logs = runtimeLogs)
         }
     }
 }
@@ -621,6 +672,71 @@ private fun ExecutionLogContent(logs: List<ReminderExecutionLog>) {
             }
         }
         item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun RuntimeLogContent(logs: List<AppRuntimeLog>) {
+    val clipboardManager = LocalClipboardManager.current
+    if (logs.isEmpty()) {
+        EmptyState(title = "暂无运行日志", subtitle = "出现错误、解析失败或弹窗异常时，日志会记录在这里。")
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(
+                onClick = {
+                    val all = logs.joinToString("\n\n----------------\n\n") { it.toCopyText() }
+                    clipboardManager.setText(AnnotatedString(all))
+                }
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null)
+                Spacer(modifier = Modifier.size(6.dp))
+                Text("复制全部")
+            }
+        }
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(logs, key = { it.id }) { log ->
+                Card(shape = RoundedCornerShape(18.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "${log.level} · ${log.tag}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            TextButton(onClick = { clipboardManager.setText(AnnotatedString(log.toCopyText())) }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null)
+                                Spacer(modifier = Modifier.size(4.dp))
+                                Text("复制")
+                            }
+                        }
+                        Text("时间：${formatAbsoluteTime(log.createdAt)}", style = MaterialTheme.typography.bodySmall)
+                        Text(log.message, style = MaterialTheme.typography.bodyMedium)
+                        if (!log.details.isNullOrBlank()) {
+                            Text(
+                                log.details,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+                            )
+                        }
+                    }
+                }
+            }
+            item { Spacer(modifier = Modifier.height(80.dp)) }
+        }
     }
 }
 

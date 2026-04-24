@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.Intent
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.ReminderExecutionLog
+import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
+import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.nextRunAfter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +46,9 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     ReminderScheduler(context.applicationContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
+                    if (task.reminderMode == ReminderMode.STRONG) {
+                        StrongReminderActivityLauncher.launch(context, task, logId)
+                    }
                 } else {
                     dao.update(task.copy(status = TaskStatus.COMPLETED))
                     val logId = logDao.insert(
@@ -56,7 +61,12 @@ class AlarmReceiver : BroadcastReceiver() {
                         )
                     )
                     DuckTaskNotifications.showReminder(context, task, null, logId)
+                    if (task.reminderMode == ReminderMode.STRONG) {
+                        StrongReminderActivityLauncher.launch(context, task, logId)
+                    }
                 }
+            } catch (t: Throwable) {
+                AppLogger.error("AlarmReceiver", "Failed to execute reminder: taskId=$taskId", t)
             } finally {
                 pendingResult.finish()
             }

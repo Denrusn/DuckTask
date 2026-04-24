@@ -2,6 +2,8 @@ package com.ducktask.app.data.repository
 
 import com.ducktask.app.data.local.ReminderLogDao
 import com.ducktask.app.data.local.TaskDao
+import com.ducktask.app.data.local.AppRuntimeLogDao
+import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.DEFAULT_USER_ID
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
@@ -10,6 +12,7 @@ import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.domain.model.TRIGGER_TYPE_DATE
 import com.ducktask.app.parser.TimeParser
 import com.ducktask.app.scheduler.ReminderScheduler
+import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.parseEditableDateTime
 import com.ducktask.app.util.toEpochMillis
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +20,7 @@ import kotlinx.coroutines.flow.Flow
 class TaskRepository(
     private val taskDao: TaskDao,
     private val reminderLogDao: ReminderLogDao,
+    private val appRuntimeLogDao: AppRuntimeLogDao,
     private val scheduler: ReminderScheduler
 ) {
     fun getAllPendingTasks(): Flow<List<Task>> = taskDao.observePendingTasks()
@@ -24,6 +28,8 @@ class TaskRepository(
     fun getAllTasks(): Flow<List<Task>> = taskDao.observeAllTasks()
 
     fun getExecutionLogs(): Flow<List<ReminderExecutionLog>> = reminderLogDao.observeLogs()
+
+    fun getRuntimeLogs(): Flow<List<AppRuntimeLog>> = appRuntimeLogDao.observeLogs()
 
     suspend fun getTaskById(id: Long): Task? = taskDao.getTaskById(id)
 
@@ -44,6 +50,8 @@ class TaskRepository(
             )
             val id = taskDao.insert(task)
             task.copy(id = id).also(scheduler::schedule)
+        }.onFailure {
+            AppLogger.error("TaskRepository", "createTaskFromText failed: $text", it)
         }
     }
 
@@ -72,6 +80,12 @@ class TaskRepository(
             taskDao.update(updatedTask)
             scheduler.schedule(updatedTask)
             updatedTask
+        }.onFailure {
+            AppLogger.error(
+                "TaskRepository",
+                "updateTask failed: taskId=${task.taskId}, nextRunTimeText=$nextRunTimeText",
+                it
+            )
         }
     }
 

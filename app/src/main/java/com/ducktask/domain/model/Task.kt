@@ -78,6 +78,30 @@ data class ReminderExecutionLog(
     }
 }
 
+@Entity(
+    tableName = "app_runtime_logs",
+    indices = [Index(value = ["createdAt"]), Index(value = ["level"])]
+)
+data class AppRuntimeLog(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val level: String,
+    val tag: String,
+    val message: String,
+    val details: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun toCopyText(): String = buildString {
+        append("时间戳: ").append(createdAt).append('\n')
+        append("级别: ").append(level).append('\n')
+        append("模块: ").append(tag).append('\n')
+        append("信息: ").append(message)
+        if (!details.isNullOrBlank()) {
+            append("\n详情:\n").append(details)
+        }
+    }
+}
+
 data class RepeatRule(
     val years: Int = 0,
     val months: Int = 0,

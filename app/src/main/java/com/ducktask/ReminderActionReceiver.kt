@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.ducktask.app.data.local.AppDatabase
+import com.ducktask.app.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +27,8 @@ class ReminderActionReceiver : BroadcastReceiver() {
                     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(notificationId)
                 }
+            } catch (t: Throwable) {
+                AppLogger.error("ReminderActionReceiver", "Failed to acknowledge reminder action", t)
             } finally {
                 pendingResult.finish()
             }

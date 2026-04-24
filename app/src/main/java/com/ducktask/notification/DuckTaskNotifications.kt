@@ -82,15 +82,16 @@ object DuckTaskNotifications {
                 }
             )
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(openAppIntent)
 
         if (task.reminderMode == ReminderMode.NORMAL) {
+            builder.setContentIntent(openAppIntent)
             builder.addAction(
                 android.R.drawable.checkbox_on_background,
                 "已处理",
                 acknowledgeIntent(context, notificationId, logId)
             )
         } else {
+            builder.setContentIntent(strongReminderIntent(context, notificationId, logId, task))
             builder.setFullScreenIntent(
                 strongReminderIntent(context, notificationId, logId, task),
                 canUseFullScreenIntent(context)

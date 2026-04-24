@@ -58,9 +58,11 @@ object ChineseNumberNormalizer {
     )
 
     fun normalize(text: String): String {
-        val protectedWeekday = text
+        val protectedWeekday = replaceMixedArabicChineseNumbers(
+            text
             .replace(Regex("((?:周|星期|礼拜)[一二三四五六日天])(?=\\d)"), "$1 ")
             .replace('：', ':')
+        )
         val firstPass = mutableListOf<Any>()
         for (char in protectedWeekday) {
             when {
@@ -92,6 +94,19 @@ object ChineseNumberNormalizer {
 
         return buildString {
             merged.forEach { append(it.toString()) }
+        }
+    }
+
+    private fun replaceMixedArabicChineseNumbers(text: String): String {
+        return Regex("(\\d)十([一二三四五六七八九\\d]?)").replace(text) { match ->
+            val tens = match.groupValues[1].toInt() * 10
+            val onesRaw = match.groupValues[2]
+            val ones = when {
+                onesRaw.isBlank() -> 0
+                onesRaw.first().isDigit() -> onesRaw.toInt()
+                else -> cnNum[onesRaw.first()] ?: 0
+            }
+            (tens + ones).toString()
         }
     }
 }
@@ -192,7 +207,7 @@ private class RuleParser(
     }
 
     private fun parseYearRepeat(): Unit? {
-        val match = Regex("每(?:隔)?(?:(\\d+)个?)?年(?:\\s*(\\d{1,2})月(\\d{1,2})(?:号|日)?)?").find(text)
+        val match = Regex("每(?:(?:隔)?(?:(\\d+)个?)?|个)?年(?:\\s*(\\d{1,2})月(\\d{1,2})(?:号|日)?)?").find(text)
             ?: return null
         val count = match.groupValues[1].toIntOrNull() ?: 1
         checkRepeatCount(count)
@@ -208,7 +223,7 @@ private class RuleParser(
     }
 
     private fun parseMonthRepeat(): Unit? {
-        val match = Regex("每(?:隔)?(?:(\\d+)个?)?月(?:\\s*(\\d{1,2})(?:号|日)?)?").find(text)
+        val match = Regex("每(?:(?:隔)?(?:(\\d+)个?)?|个)?月(?:\\s*(\\d{1,2})(?:号|日)?)?").find(text)
             ?: return null
         val count = match.groupValues[1].toIntOrNull() ?: 1
         checkRepeatCount(count)
@@ -224,7 +239,7 @@ private class RuleParser(
     }
 
     private fun parseWeekRepeat(): Unit? {
-        val match = Regex("每(?:隔)?(?:(\\d+)个?)?(?:周|星期|礼拜)(?:的)?(?:(?:周|星期|礼拜)?([1-7日天]))?").find(text)
+        val match = Regex("每(?:(?:隔)?(?:(\\d+)个?)?|个)?(?:周|星期|礼拜)(?:的)?(?:(?:周|星期|礼拜)?([1-7日天]))?").find(text)
             ?: return null
         val count = match.groupValues[1].toIntOrNull() ?: 1
         checkRepeatCount(count)
@@ -238,7 +253,7 @@ private class RuleParser(
     }
 
     private fun parseDayRepeat(): Unit? {
-        val match = Regex("每(?:隔)?(?:(\\d+)个?)?天").find(text) ?: return null
+        val match = Regex("每(?:(?:隔)?(?:(\\d+)个?)?|个)?天").find(text) ?: return null
         val count = match.groupValues[1].toIntOrNull() ?: 1
         checkRepeatCount(count)
         state.repeat = RepeatRule(days = count)
@@ -247,7 +262,7 @@ private class RuleParser(
     }
 
     private fun parseHourRepeat() {
-        val match = Regex("每(?:隔)?(?:(\\d+)个?)?(?:小时|钟头)").find(text) ?: return
+        val match = Regex("每(?:(?:隔)?(?:(\\d+)个?)?|个)?(?:小时|钟头)").find(text) ?: return
         val count = match.groupValues[1].toIntOrNull() ?: 1
         if (count <= 2) {
             throw ParseException("小时级重复需间隔2小时以上")

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.ducktask.app.data.repository.TaskRepository
+import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
@@ -42,6 +43,9 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val executionLogs: StateFlow<List<ReminderExecutionLog>> = repository.getExecutionLogs()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val runtimeLogs: StateFlow<List<AppRuntimeLog>> = repository.getRuntimeLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun onEvent(event: MainUiEvent) {

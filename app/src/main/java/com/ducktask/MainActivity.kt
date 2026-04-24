@@ -59,11 +59,13 @@ class MainActivity : ComponentActivity() {
                     )
                     val tasks by viewModel.pendingTasks.collectAsState()
                     val executionLogs by viewModel.executionLogs.collectAsState()
+                    val runtimeLogs by viewModel.runtimeLogs.collectAsState()
 
                     MainScreen(
                         viewModel = viewModel,
                         tasks = tasks,
                         executionLogs = executionLogs,
+                        runtimeLogs = runtimeLogs,
                         permissionIssues = permissionIssues,
                         onResolvePermission = ::resolvePermission
                     )

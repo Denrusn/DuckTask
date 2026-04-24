@@ -20,6 +20,7 @@ class TimeParserTest {
         assertEquals("1203", ChineseNumberNormalizer.normalize("一千二百零三"))
         assertEquals("11101", ChineseNumberNormalizer.normalize("一万一千一百零一"))
         assertEquals("9981", ChineseNumberNormalizer.normalize("99八十一"))
+        assertEquals("10点", ChineseNumberNormalizer.normalize("1十点"))
     }
 
     @Test
@@ -75,6 +76,20 @@ class TimeParserTest {
         assertEquals(5, parsed.time.monthValue)
         assertEquals(20, parsed.time.dayOfMonth)
         assertEquals("还信用卡", parsed.event)
+        assertEquals(1, parsed.repeat?.months)
+    }
+
+    @Test
+    fun parsesEveryMonthAliasAndUsesNextCycleWhenCurrentDayHasPassed() {
+        val parsed = TimeParser.parse(
+            "每个月1日早上1十点提醒我还款",
+            LocalDateTime.of(2026, 4, 24, 9, 0)
+        )
+        assertEquals(2026, parsed.time.year)
+        assertEquals(5, parsed.time.monthValue)
+        assertEquals(1, parsed.time.dayOfMonth)
+        assertEquals(10, parsed.time.hour)
+        assertEquals("还款", parsed.event)
         assertEquals(1, parsed.repeat?.months)
     }
 
