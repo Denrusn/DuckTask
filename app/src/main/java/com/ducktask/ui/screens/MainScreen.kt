@@ -44,10 +44,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -55,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -199,6 +202,22 @@ fun MainScreen(
                             )
                         }
                     }
+                    if (currentDestination == MainDestination.LOGS) {
+                        IconButton(onClick = { logTab = LogTab.EXECUTION.name }) {
+                            Icon(
+                                Icons.Default.History,
+                                contentDescription = "执行记录",
+                                tint = if (currentLogTab == LogTab.EXECUTION) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        IconButton(onClick = { logTab = LogTab.RUNTIME.name }) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = "运行日志",
+                                tint = if (currentLogTab == LogTab.RUNTIME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             )
         }
@@ -317,19 +336,6 @@ private fun LogPageContent(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(
-                selected = currentLogTab == LogTab.EXECUTION,
-                onClick = { onLogTabChange(LogTab.EXECUTION) },
-                label = { Text("执行记录") }
-            )
-            FilterChip(
-                selected = currentLogTab == LogTab.RUNTIME,
-                onClick = { onLogTabChange(LogTab.RUNTIME) },
-                label = { Text("运行日志") }
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
         when (currentLogTab) {
             LogTab.EXECUTION -> ExecutionLogContent(logs = executionLogs)
             LogTab.RUNTIME -> RuntimeLogContent(logs = runtimeLogs)
@@ -348,46 +354,68 @@ private fun HomeContent(
     onDone: (Task) -> Unit,
     onEdit: (Task) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(12.dp))
-        InputCard(
-            inputText = uiState.inputText,
-            createReminderMode = uiState.createReminderMode,
-            isLoading = uiState.isLoading,
-            errorMessage = uiState.errorMessage,
-            onInputChange = onInputChange,
-            onReminderModeChange = onReminderModeChange,
-            onSubmit = onSubmit
-        )
+    var showInputSheet by remember { mutableStateOf(false) }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        if (tasks.isEmpty()) {
-            EmptyState()
-        } else {
-            Text(
-                text = "待提醒 (${tasks.size})",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(12.dp))
+            if (tasks.isEmpty()) {
+                EmptyState()
+            } else {
+                Text(
+                    text = "待提醒 (${tasks.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(tasks, key = { it.taskId }) { task ->
-                    TaskCard(
-                        task = task,
-                        onDelete = { onDelete(task) },
-                        onDone = { onDone(task) },
-                        onEdit = { onEdit(task) }
-                    )
-                }
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(tasks, key = { it.taskId }) { task ->
+                        TaskCard(
+                            task = task,
+                            onDelete = { onDelete(task) },
+                            onDone = { onDone(task) },
+                            onEdit = { onEdit(task) }
+                        )
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
                 }
             }
+        }
+
+        ExtendedFloatingActionButton(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            onClick = { showInputSheet = true },
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            text = { Text("添加提醒") }
+        )
+    }
+
+    if (showInputSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showInputSheet = false },
+            sheetState = rememberModalBottomSheetState()
+        ) {
+            InputCard(
+                inputText = uiState.inputText,
+                createReminderMode = uiState.createReminderMode,
+                isLoading = uiState.isLoading,
+                errorMessage = uiState.errorMessage,
+                onInputChange = onInputChange,
+                onReminderModeChange = onReminderModeChange,
+                onSubmit = {
+                    onSubmit()
+                    showInputSheet = false
+                }
+            )
         }
     }
 }
@@ -617,9 +645,9 @@ private fun TaskCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.06f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(

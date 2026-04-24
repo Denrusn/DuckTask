@@ -104,6 +104,11 @@ class TaskRepository(
         scheduler.cancel(task.taskId)
         cancelReminderUi(task.taskId)
         taskDao.update(task.copy(status = TaskStatus.COMPLETED))
+        // 同步更新 execution log
+        val latestLog = reminderLogDao.findLatestUnacknowledged(task.taskId)
+        if (latestLog != null) {
+            reminderLogDao.acknowledge(latestLog.id, System.currentTimeMillis(), "手动完成")
+        }
     }
 
     suspend fun acknowledgeExecution(logId: Long, dismissMethod: String) {
