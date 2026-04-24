@@ -28,4 +28,14 @@ interface ReminderLogDao {
         """
     )
     suspend fun acknowledge(logId: Long, acknowledgedAt: Long, dismissMethod: String)
+
+    @Query(
+        """
+        SELECT * FROM reminder_execution_logs
+        WHERE taskId = :taskId AND acknowledgedAt IS NULL
+        ORDER BY triggeredAt DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findLatestUnacknowledged(taskId: String): ReminderExecutionLog?
 }

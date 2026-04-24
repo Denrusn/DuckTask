@@ -54,4 +54,7 @@ interface TaskDao {
 
     @Query("UPDATE reminder_tasks SET status = :status WHERE taskId = :taskId AND status = :fromStatus")
     suspend fun updateStatusIfMatches(taskId: String, fromStatus: Int, status: Int)
+
+    @Query("SELECT * FROM reminder_tasks WHERE status = :status")
+    suspend fun getTasksByStatus(status: Int): List<Task>
 }

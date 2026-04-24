@@ -1,6 +1,7 @@
 package com.ducktask.app
 
 import android.app.Application
+import android.content.IntentFilter
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.data.repository.TaskRepository
 import com.ducktask.app.notification.DuckTaskNotifications
@@ -13,6 +14,7 @@ import kotlinx.coroutines.launch
 
 class DuckTaskApp : Application() {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var deviceUnlockReceiver: DeviceUnlockReceiver? = null
 
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     val scheduler: ReminderScheduler by lazy { ReminderScheduler(this) }
@@ -27,5 +29,15 @@ class DuckTaskApp : Application() {
         appScope.launch {
             repository.reschedulePendingTasks()
         }
+        // 注册解锁广播
+        deviceUnlockReceiver = DeviceUnlockReceiver()
+        val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
+        registerReceiver(deviceUnlockReceiver, filter)
+    }
+
+    override fun onTerminate() {
+        deviceUnlockReceiver?.let { unregisterReceiver(it) }
+        deviceUnlockReceiver = null
+        super.onTerminate()
     }
 }
