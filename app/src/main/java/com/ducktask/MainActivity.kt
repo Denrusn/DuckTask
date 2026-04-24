@@ -26,6 +26,7 @@ import com.ducktask.app.ui.screens.MainViewModel
 import com.ducktask.app.ui.theme.DuckTaskTheme
 import com.ducktask.app.util.AppPermissionIssue
 import com.ducktask.app.util.AppPermissionType
+import com.ducktask.app.util.PermissionGuideStore
 import com.ducktask.app.util.PermissionUtils
 
 class MainActivity : ComponentActivity() {
@@ -67,7 +68,8 @@ class MainActivity : ComponentActivity() {
                         executionLogs = executionLogs,
                         runtimeLogs = runtimeLogs,
                         permissionIssues = permissionIssues,
-                        onResolvePermission = ::resolvePermission
+                        onResolvePermission = ::resolvePermission,
+                        onAcknowledgePermission = ::acknowledgePermission
                     )
                 }
             }
@@ -95,11 +97,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
             AppPermissionType.EXACT_ALARM,
+            AppPermissionType.OVERLAY,
             AppPermissionType.FULL_SCREEN,
             AppPermissionType.BATTERY_OPTIMIZATION,
             AppPermissionType.AUTO_START -> {
                 launchSettings(type)
             }
+        }
+    }
+
+    private fun acknowledgePermission(type: AppPermissionType) {
+        when (type) {
+            AppPermissionType.AUTO_START -> {
+                PermissionGuideStore.acknowledgeAutoStart(this)
+                refreshPermissionIssues()
+            }
+            else -> Unit
         }
     }
 

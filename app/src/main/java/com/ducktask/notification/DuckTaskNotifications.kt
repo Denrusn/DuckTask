@@ -17,6 +17,7 @@ import com.ducktask.app.ReminderActionReceiver
 import com.ducktask.app.StrongReminderActivity
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
+import com.ducktask.app.util.PermissionUtils
 import com.ducktask.app.util.formatAbsoluteTime
 
 object DuckTaskNotifications {
@@ -92,10 +93,12 @@ object DuckTaskNotifications {
             )
         } else {
             builder.setContentIntent(strongReminderIntent(context, notificationId, logId, task))
-            builder.setFullScreenIntent(
-                strongReminderIntent(context, notificationId, logId, task),
-                canUseFullScreenIntent(context)
-            )
+            if (shouldUseFullScreenFallback(context)) {
+                builder.setFullScreenIntent(
+                    strongReminderIntent(context, notificationId, logId, task),
+                    canUseFullScreenIntent(context)
+                )
+            }
         }
 
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
@@ -141,5 +144,9 @@ object DuckTaskNotifications {
         } else {
             true
         }
+    }
+
+    private fun shouldUseFullScreenFallback(context: Context): Boolean {
+        return !PermissionUtils.canDrawOverlay(context) || PermissionUtils.isDeviceLocked(context)
     }
 }

@@ -2,6 +2,7 @@ package com.ducktask.app.util
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
@@ -17,6 +18,7 @@ import androidx.core.content.ContextCompat
 enum class AppPermissionType {
     NOTIFICATION,
     EXACT_ALARM,
+    OVERLAY,
     FULL_SCREEN,
     BATTERY_OPTIMIZATION,
     AUTO_START
@@ -57,6 +59,15 @@ object PermissionUtils {
             }
         }
 
+        if (!canDrawOverlay(context)) {
+            issues += AppPermissionIssue(
+                type = AppPermissionType.OVERLAY,
+                title = "悬浮窗权限未开启",
+                description = "强提醒在 App 退到后台时，需要悬浮窗权限才能直接弹出覆盖提醒。",
+                actionLabel = "开启悬浮窗"
+            )
+        }
+
         if (Build.VERSION.SDK_INT >= 34) {
             val notificationService = context.getSystemService(NotificationManager::class.java)
             if (!notificationService.canUseFullScreenIntent()) {
@@ -81,7 +92,7 @@ object PermissionUtils {
             }
         }
 
-        if (shouldShowAutoStartGuide()) {
+        if (shouldShowAutoStartGuide(context)) {
             issues += AppPermissionIssue(
                 type = AppPermissionType.AUTO_START,
                 title = "建议开启自启动",
@@ -112,6 +123,10 @@ object PermissionUtils {
                     listOf(appDetailsIntent(packageUri))
                 }
             }
+            AppPermissionType.OVERLAY -> listOf(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri),
+                appDetailsIntent(packageUri)
+            )
             AppPermissionType.FULL_SCREEN -> {
                 if (Build.VERSION.SDK_INT >= 34) {
                     listOf(
@@ -209,7 +224,17 @@ object PermissionUtils {
     private fun appDetailsIntent(packageUri: Uri): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
 
-    private fun shouldShowAutoStartGuide(): Boolean {
+    fun canDrawOverlay(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+    }
+
+    fun isDeviceLocked(context: Context): Boolean {
+        val keyguardManager = context.getSystemService(KeyguardManager::class.java)
+        return keyguardManager?.isKeyguardLocked == true
+    }
+
+    private fun shouldShowAutoStartGuide(context: Context): Boolean {
+        if (PermissionGuideStore.isAutoStartAcknowledged(context)) return false
         val manufacturer = Build.MANUFACTURER.lowercase()
         return manufacturer.contains("xiaomi") ||
             manufacturer.contains("redmi") ||

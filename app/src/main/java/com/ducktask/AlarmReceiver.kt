@@ -47,7 +47,10 @@ class AlarmReceiver : BroadcastReceiver() {
                     ReminderScheduler(context.applicationContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        StrongReminderActivityLauncher.launch(context, task, logId)
+                        val shownByOverlay = StrongReminderOverlayService.startIfPossible(context, task, logId)
+                        if (!shownByOverlay) {
+                            StrongReminderActivityLauncher.launch(context, task, logId)
+                        }
                     }
                 } else {
                     dao.update(task.copy(status = TaskStatus.COMPLETED))
@@ -62,7 +65,10 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     DuckTaskNotifications.showReminder(context, task, null, logId)
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        StrongReminderActivityLauncher.launch(context, task, logId)
+                        val shownByOverlay = StrongReminderOverlayService.startIfPossible(context, task, logId)
+                        if (!shownByOverlay) {
+                            StrongReminderActivityLauncher.launch(context, task, logId)
+                        }
                     }
                 }
             } catch (t: Throwable) {

@@ -93,7 +93,8 @@ import kotlinx.coroutines.delay
 private enum class MainDestination {
     HOME,
     EDIT,
-    LOGS
+    LOGS,
+    PERMISSIONS
 }
 
 private enum class LogTab {
@@ -109,17 +110,20 @@ fun MainScreen(
     executionLogs: List<ReminderExecutionLog>,
     runtimeLogs: List<AppRuntimeLog>,
     permissionIssues: List<AppPermissionIssue>,
-    onResolvePermission: (AppPermissionType) -> Unit
+    onResolvePermission: (AppPermissionType) -> Unit,
+    onAcknowledgePermission: (AppPermissionType) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
     var destination by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
     var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var logTab by rememberSaveable { mutableStateOf(LogTab.EXECUTION.name) }
+    var deletingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSuccess by remember { mutableStateOf(false) }
     val currentDestination = MainDestination.valueOf(destination)
     val currentLogTab = LogTab.valueOf(logTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
+    val deletingTask = tasks.firstOrNull { it.taskId == deletingTaskId }
     val openLogTab: (LogTab) -> Unit = {
         logTab = it.name
         destination = MainDestination.LOGS.name
@@ -158,6 +162,7 @@ fun MainScreen(
                             MainDestination.HOME -> "DuckTask"
                             MainDestination.EDIT -> "编辑提醒"
                             MainDestination.LOGS -> "日志中心"
+                            MainDestination.PERMISSIONS -> "运行保障"
                         },
                         fontWeight = FontWeight.Bold
                     )
@@ -179,6 +184,20 @@ fun MainScreen(
                         IconButton(onClick = { openLogTab(LogTab.EXECUTION) }) {
                             Icon(Icons.Default.History, contentDescription = "执行记录")
                         }
+                        IconButton(onClick = { openLogTab(LogTab.RUNTIME) }) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = "运行日志",
+                                tint = if (runtimeLogs.isNotEmpty()) DuckOrange else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        IconButton(onClick = { destination = MainDestination.PERMISSIONS.name }) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "运行保障",
+                                tint = if (permissionIssues.isNotEmpty()) Error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             )
@@ -195,19 +214,13 @@ fun MainScreen(
                 MainDestination.HOME -> HomeContent(
                     uiState = uiState,
                     tasks = tasks,
-                    permissionIssues = permissionIssues,
-                    onResolvePermission = onResolvePermission,
                     onInputChange = { viewModel.onEvent(MainUiEvent.InputChanged(it)) },
                     onReminderModeChange = { viewModel.onEvent(MainUiEvent.CreateReminderModeChanged(it)) },
                     onSubmit = {
                         focusManager.clearFocus()
                         viewModel.onEvent(MainUiEvent.SubmitTask)
                     },
-                    executionLogCount = executionLogs.size,
-                    runtimeLogCount = runtimeLogs.size,
-                    onOpenExecutionLogs = { openLogTab(LogTab.EXECUTION) },
-                    onOpenRuntimeLogs = { openLogTab(LogTab.RUNTIME) },
-                    onDelete = { viewModel.onEvent(MainUiEvent.DeleteTask(it)) },
+                    onDelete = { deletingTaskId = it.taskId },
                     onDone = { viewModel.onEvent(MainUiEvent.MarkDone(it)) },
                     onEdit = {
                         editingTaskId = it.taskId
@@ -237,6 +250,11 @@ fun MainScreen(
                     runtimeLogs = runtimeLogs,
                     currentLogTab = currentLogTab,
                     onLogTabChange = { logTab = it.name }
+                )
+                MainDestination.PERMISSIONS -> PermissionCenterContent(
+                    permissionIssues = permissionIssues,
+                    onResolvePermission = onResolvePermission,
+                    onAcknowledgePermission = onAcknowledgePermission
                 )
             }
 
@@ -270,6 +288,17 @@ fun MainScreen(
                         )
                     }
                 }
+            }
+
+            if (deletingTask != null) {
+                DeleteConfirmDialog(
+                    task = deletingTask,
+                    onDismiss = { deletingTaskId = null },
+                    onConfirm = {
+                        deletingTaskId = null
+                        viewModel.onEvent(MainUiEvent.DeleteTask(deletingTask))
+                    }
+                )
             }
         }
     }
@@ -312,15 +341,9 @@ private fun LogPageContent(
 private fun HomeContent(
     uiState: MainUiState,
     tasks: List<Task>,
-    permissionIssues: List<AppPermissionIssue>,
-    onResolvePermission: (AppPermissionType) -> Unit,
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
     onSubmit: () -> Unit,
-    executionLogCount: Int,
-    runtimeLogCount: Int,
-    onOpenExecutionLogs: () -> Unit,
-    onOpenRuntimeLogs: () -> Unit,
     onDelete: (Task) -> Unit,
     onDone: (Task) -> Unit,
     onEdit: (Task) -> Unit
@@ -331,11 +354,6 @@ private fun HomeContent(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(12.dp))
-        if (permissionIssues.isNotEmpty()) {
-            PermissionIssueCard(permissionIssues = permissionIssues, onResolvePermission = onResolvePermission)
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
         InputCard(
             inputText = uiState.inputText,
             createReminderMode = uiState.createReminderMode,
@@ -344,14 +362,6 @@ private fun HomeContent(
             onInputChange = onInputChange,
             onReminderModeChange = onReminderModeChange,
             onSubmit = onSubmit
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-        LogShortcutRow(
-            executionLogCount = executionLogCount,
-            runtimeLogCount = runtimeLogCount,
-            onOpenExecutionLogs = onOpenExecutionLogs,
-            onOpenRuntimeLogs = onOpenRuntimeLogs
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -383,114 +393,120 @@ private fun HomeContent(
 }
 
 @Composable
-private fun PermissionIssueCard(
+private fun PermissionCenterContent(
     permissionIssues: List<AppPermissionIssue>,
-    onResolvePermission: (AppPermissionType) -> Unit
+    onResolvePermission: (AppPermissionType) -> Unit,
+    onAcknowledgePermission: (AppPermissionType) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        shape = RoundedCornerShape(24.dp)
+    if (permissionIssues.isEmpty()) {
+        EmptyState(
+            title = "运行保障已就绪",
+            subtitle = "通知、定时和后台提醒相关权限都已配置完成。"
+        )
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.Warning, contentDescription = null)
-                Text("运行保障", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        item {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("建议优先完成这些设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "它们会影响通知准时性、后台悬浮窗强提醒以及系统长时间保活。",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
-            permissionIssues.forEach { issue ->
-                Card(shape = RoundedCornerShape(18.dp)) {
+        }
+        items(permissionIssues, key = { it.type.name }) { issue ->
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(issue.title, fontWeight = FontWeight.SemiBold)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(issue.description, style = MaterialTheme.typography.bodySmall)
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Error.copy(alpha = 0.10f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                modifier = Modifier.padding(10.dp),
+                                tint = Error
+                            )
                         }
-                        Spacer(modifier = Modifier.size(12.dp))
-                        TextButton(onClick = { onResolvePermission(issue.type) }) {
+                        Column {
+                            Text(issue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = issue.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (issue.type == AppPermissionType.AUTO_START) {
+                            TextButton(onClick = { onAcknowledgePermission(issue.type) }) {
+                                Text("我已开启")
+                            }
+                        }
+                        Button(onClick = { onResolvePermission(issue.type) }) {
                             Text(issue.actionLabel)
                         }
                     }
                 }
             }
         }
+        item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
 
 @Composable
-private fun LogShortcutRow(
-    executionLogCount: Int,
-    runtimeLogCount: Int,
-    onOpenExecutionLogs: () -> Unit,
-    onOpenRuntimeLogs: () -> Unit
+private fun DeleteConfirmDialog(
+    task: Task,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        QuickEntryCard(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.History,
-            title = "执行记录",
-            subtitle = if (executionLogCount == 0) "暂无触发记录" else "已记录 $executionLogCount 条提醒触发",
-            tint = MaterialTheme.colorScheme.primary,
-            onClick = onOpenExecutionLogs
-        )
-        QuickEntryCard(
-            modifier = Modifier.weight(1f),
-            icon = Icons.Default.Description,
-            title = "运行日志",
-            subtitle = if (runtimeLogCount == 0) "暂无错误日志" else "可复制 $runtimeLogCount 条调试日志",
-            tint = DuckOrange,
-            onClick = onOpenRuntimeLogs
-        )
-    }
-}
-
-@Composable
-private fun QuickEntryCard(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    tint: Color,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.18f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = tint.copy(alpha = 0.14f)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.padding(10.dp),
-                    tint = tint
-                )
-            }
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("确认删除提醒？") },
+        text = {
             Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
+                text = "将删除“${task.event}”这条提醒。删除后不会恢复。",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
             )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("确认删除")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
         }
-    }
+    )
 }
 
 @Composable
