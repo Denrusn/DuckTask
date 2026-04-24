@@ -53,7 +53,7 @@ class AlarmReceiver : BroadcastReceiver() {
                         }
                     }
                 } else {
-                    dao.update(task.copy(status = TaskStatus.COMPLETED))
+                    dao.update(task.copy(status = TaskStatus.ALERTING))
                     val logId = logDao.insert(
                         ReminderExecutionLog(
                             taskId = task.taskId,

@@ -89,7 +89,7 @@ object DuckTaskNotifications {
             builder.addAction(
                 android.R.drawable.checkbox_on_background,
                 "已处理",
-                acknowledgeIntent(context, notificationId, logId)
+                acknowledgeIntent(context, notificationId, logId, task.taskId)
             )
         } else {
             builder.setContentIntent(strongReminderIntent(context, notificationId, logId, task))
@@ -104,11 +104,12 @@ object DuckTaskNotifications {
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
     }
 
-    private fun acknowledgeIntent(context: Context, notificationId: Int, logId: Long): PendingIntent {
+    private fun acknowledgeIntent(context: Context, notificationId: Int, logId: Long, taskId: String): PendingIntent {
         val intent = Intent(context, ReminderActionReceiver::class.java)
             .setAction(ReminderActionReceiver.ACTION_ACKNOWLEDGE)
             .putExtra(ReminderActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
             .putExtra(ReminderActionReceiver.EXTRA_LOG_ID, logId)
+            .putExtra(ReminderActionReceiver.EXTRA_TASK_ID, taskId)
         return PendingIntent.getBroadcast(
             context,
             notificationId,
@@ -124,6 +125,7 @@ object DuckTaskNotifications {
         task: Task
     ): PendingIntent {
         val intent = Intent(context, StrongReminderActivity::class.java)
+            .putExtra(StrongReminderActivity.EXTRA_TASK_ID, task.taskId)
             .putExtra(StrongReminderActivity.EXTRA_EVENT, task.event)
             .putExtra(StrongReminderActivity.EXTRA_DESCRIPTION, task.description)
             .putExtra(StrongReminderActivity.EXTRA_LOG_ID, logId)

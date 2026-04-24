@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ducktask.app.data.local.AppDatabase
+import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.ui.theme.DuckOrange
 import com.ducktask.app.ui.theme.DuckTaskTheme
 import com.ducktask.app.ui.theme.DuckYellow
@@ -73,6 +74,7 @@ class StrongReminderActivity : ComponentActivity() {
 
         val event = intent.getStringExtra(EXTRA_EVENT).orEmpty()
         val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
+        val taskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
         val logId = intent.getLongExtra(EXTRA_LOG_ID, -1L)
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
 
@@ -82,28 +84,35 @@ class StrongReminderActivity : ComponentActivity() {
                     event = event,
                     description = description,
                     onDismiss = {
-                        acknowledgeAndFinish(logId, notificationId)
+                        acknowledgeAndFinish(taskId, logId, notificationId)
                     }
                 )
             }
         }
     }
 
-    private fun acknowledgeAndFinish(logId: Long, notificationId: Int) {
+    private fun acknowledgeAndFinish(taskId: String, logId: Long, notificationId: Int) {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(notificationId)
 
-        if (logId > 0) {
-            val appContext = applicationContext
-            val db = AppDatabase.getInstance(appContext)
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        val appContext = applicationContext
+        val db = AppDatabase.getInstance(appContext)
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            if (logId > 0) {
                 db.reminderLogDao().acknowledge(logId, System.currentTimeMillis(), DISMISS_METHOD_POPUP)
+            }
+            if (taskId.isNotBlank()) {
+                val task = db.taskDao().getTaskByTaskId(taskId)
+                if (task?.status == TaskStatus.ALERTING) {
+                    db.taskDao().updateStatus(taskId, TaskStatus.COMPLETED)
+                }
             }
         }
         finish()
     }
 
     companion object {
+        const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_EVENT = "event"
         const val EXTRA_DESCRIPTION = "description"
         const val EXTRA_LOG_ID = "log_id"

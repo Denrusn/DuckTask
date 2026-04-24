@@ -16,6 +16,7 @@ object TaskStatus {
     const val PENDING = 0
     const val COMPLETED = 1
     const val DELETED = 2
+    const val ALERTING = 3
 }
 
 object ReminderMode {
@@ -49,6 +50,8 @@ data class Task(
     fun hasRepeat(): Boolean = repeatRule()?.isRepeating() == true
 
     fun reminderModeLabel(): String = ReminderMode.label(reminderMode)
+
+    fun isAlerting(): Boolean = status == TaskStatus.ALERTING
 }
 
 @Entity(

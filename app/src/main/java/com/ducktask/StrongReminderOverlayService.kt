@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -22,9 +23,11 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.Task
+import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.PermissionUtils
@@ -40,6 +43,7 @@ class StrongReminderOverlayService : Service() {
     private var hintView: TextView? = null
     private var holdRunnable: Runnable? = null
     private var dismissing = false
+    private var currentTaskId: String = ""
     private var currentLogId: Long = -1L
     private var currentNotificationId: Int = -1
 
@@ -61,11 +65,17 @@ class StrongReminderOverlayService : Service() {
 
         val event = intent.getStringExtra(EXTRA_EVENT).orEmpty().ifBlank { "DuckTask 提醒" }
         val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
+        currentTaskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
         currentLogId = intent.getLongExtra(EXTRA_LOG_ID, -1L)
         currentNotificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, event.hashCode())
         dismissing = false
 
-        startForeground(currentNotificationId, buildForegroundNotification(event, description))
+        ServiceCompat.startForeground(
+            this,
+            currentNotificationId,
+            buildForegroundNotification(event, description),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+        )
         showOverlay(event, description)
         return START_NOT_STICKY
     }
@@ -274,11 +284,27 @@ class StrongReminderOverlayService : Service() {
             val logId = currentLogId
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
-                    AppDatabase.getInstance(applicationContext)
-                        .reminderLogDao()
+                    val db = AppDatabase.getInstance(applicationContext)
+                    db.reminderLogDao()
                         .acknowledge(logId, System.currentTimeMillis(), StrongReminderActivity.DISMISS_METHOD_POPUP)
+                    if (currentTaskId.isNotBlank()) {
+                        val task = db.taskDao().getTaskByTaskId(currentTaskId)
+                        if (task?.status == TaskStatus.ALERTING) {
+                            db.taskDao().updateStatus(currentTaskId, TaskStatus.COMPLETED)
+                        }
+                    }
                 }.onFailure {
                     AppLogger.error("StrongReminderOverlay", "Failed to acknowledge overlay dismissal", it)
+                }
+            }
+        } else if (currentTaskId.isNotBlank()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val db = AppDatabase.getInstance(applicationContext)
+                    val task = db.taskDao().getTaskByTaskId(currentTaskId)
+                    if (task?.status == TaskStatus.ALERTING) {
+                        db.taskDao().updateStatus(currentTaskId, TaskStatus.COMPLETED)
+                    }
                 }
             }
         }
@@ -398,6 +424,7 @@ class StrongReminderOverlayService : Service() {
 
     companion object {
         private const val HOLD_DURATION_MS = 3_000L
+        private const val EXTRA_TASK_ID = "task_id"
         private const val EXTRA_EVENT = "event"
         private const val EXTRA_DESCRIPTION = "description"
         private const val EXTRA_LOG_ID = "log_id"
@@ -409,6 +436,7 @@ class StrongReminderOverlayService : Service() {
             }
             val notificationId = task.taskId.hashCode()
             val intent = Intent(context, StrongReminderOverlayService::class.java)
+                .putExtra(EXTRA_TASK_ID, task.taskId)
                 .putExtra(EXTRA_EVENT, task.event)
                 .putExtra(EXTRA_DESCRIPTION, task.description)
                 .putExtra(EXTRA_LOG_ID, logId)

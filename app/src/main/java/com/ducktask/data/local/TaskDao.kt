@@ -13,8 +13,8 @@ interface TaskDao {
     @Query(
         """
         SELECT * FROM reminder_tasks
-        WHERE status = 0
-        ORDER BY nextRunTime ASC
+        WHERE status IN (0, 3)
+        ORDER BY CASE WHEN status = 3 THEN 0 ELSE 1 END, nextRunTime ASC
         """
     )
     fun observePendingTasks(): Flow<List<Task>>
@@ -51,4 +51,7 @@ interface TaskDao {
 
     @Query("UPDATE reminder_tasks SET nextRunTime = :nextRunTime WHERE taskId = :taskId")
     suspend fun updateNextRunTime(taskId: String, nextRunTime: Long)
+
+    @Query("UPDATE reminder_tasks SET status = :status WHERE taskId = :taskId AND status = :fromStatus")
+    suspend fun updateStatusIfMatches(taskId: String, fromStatus: Int, status: Int)
 }

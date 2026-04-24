@@ -1,8 +1,12 @@
 package com.ducktask.app.data.repository
 
+import android.app.NotificationManager
+import android.content.Context
+import android.content.Intent
 import com.ducktask.app.data.local.ReminderLogDao
 import com.ducktask.app.data.local.TaskDao
 import com.ducktask.app.data.local.AppRuntimeLogDao
+import com.ducktask.app.StrongReminderOverlayService
 import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.DEFAULT_USER_ID
 import com.ducktask.app.domain.model.ReminderExecutionLog
@@ -18,6 +22,7 @@ import com.ducktask.app.util.toEpochMillis
 import kotlinx.coroutines.flow.Flow
 
 class TaskRepository(
+    private val appContext: Context,
     private val taskDao: TaskDao,
     private val reminderLogDao: ReminderLogDao,
     private val appRuntimeLogDao: AppRuntimeLogDao,
@@ -91,11 +96,13 @@ class TaskRepository(
 
     suspend fun deleteTask(task: Task) {
         scheduler.cancel(task.taskId)
+        cancelReminderUi(task.taskId)
         taskDao.update(task.copy(status = TaskStatus.DELETED))
     }
 
     suspend fun markAsDone(task: Task) {
         scheduler.cancel(task.taskId)
+        cancelReminderUi(task.taskId)
         taskDao.update(task.copy(status = TaskStatus.COMPLETED))
     }
 
@@ -105,5 +112,14 @@ class TaskRepository(
 
     suspend fun reschedulePendingTasks() {
         scheduler.reschedule(taskDao.getPendingTasksSnapshot())
+    }
+
+    private fun cancelReminderUi(taskId: String) {
+        val notificationId = taskId.hashCode()
+        val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(notificationId)
+        runCatching {
+            appContext.stopService(Intent(appContext, StrongReminderOverlayService::class.java))
+        }
     }
 }

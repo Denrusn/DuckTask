@@ -12,6 +12,7 @@ object StrongReminderActivityLauncher {
     fun launch(context: Context, task: Task, logId: Long) {
         val notificationId = task.taskId.hashCode()
         val intent = Intent(context, StrongReminderActivity::class.java)
+            .putExtra(StrongReminderActivity.EXTRA_TASK_ID, task.taskId)
             .putExtra(StrongReminderActivity.EXTRA_EVENT, task.event)
             .putExtra(StrongReminderActivity.EXTRA_DESCRIPTION, task.description)
             .putExtra(StrongReminderActivity.EXTRA_LOG_ID, logId)

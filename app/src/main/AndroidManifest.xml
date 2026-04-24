@@ -51,6 +51,7 @@
         <service
             android:name=".StrongReminderOverlayService"
             android:exported="false"
+            android:foregroundServiceType="shortService"
             android:stopWithTask="false" />
 
         <receiver

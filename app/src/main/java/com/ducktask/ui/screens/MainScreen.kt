@@ -613,6 +613,7 @@ private fun TaskCard(
     onEdit: () -> Unit
 ) {
     val accent = if (task.reminderMode == ReminderMode.STRONG) Error else DuckOrange
+    val statusTone = if (task.isAlerting()) Error else MaterialTheme.colorScheme.primary
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -623,10 +624,24 @@ private fun TaskCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TaskMetaChip(text = task.reminderModeLabel(), tone = accent)
+                        TaskMetaChip(
+                            text = if (task.isAlerting()) "待处理" else "待提醒",
+                            tone = statusTone
+                        )
+                        if (task.hasRepeat()) {
+                            TaskMetaChip(
+                                text = task.repeatRule()?.toHumanText().orEmpty(),
+                                tone = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = task.event,
                         style = MaterialTheme.typography.titleMedium,
@@ -645,56 +660,82 @@ private fun TaskCard(
                         )
                     }
                     Spacer(modifier = Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.AccessTime,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = accent
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = "下次执行：${formatAbsoluteTime(task.nextRunTime)}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = accent
                             )
-                            Text(
-                                text = formatReminderTime(task.nextRunTime),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = true,
-                            onClick = { },
-                            label = { Text(task.reminderModeLabel()) }
-                        )
-                        if (task.hasRepeat()) {
-                            FilterChip(
-                                selected = true,
-                                onClick = { },
-                                label = { Text(task.repeatRule()?.toHumanText().orEmpty()) }
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = if (task.isAlerting()) {
+                                        "已触发：${formatAbsoluteTime(task.nextRunTime)}"
+                                    } else {
+                                        "下次执行：${formatAbsoluteTime(task.nextRunTime)}"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
+                                )
+                                Text(
+                                    text = if (task.isAlerting()) {
+                                        "等待你手动确认处理"
+                                    } else {
+                                        formatReminderTime(task.nextRunTime)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+                                )
+                            }
                         }
                     }
                 }
 
-                Row {
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "编辑")
-                    }
-                    IconButton(onClick = onDone) {
-                        Icon(Icons.Default.Check, contentDescription = "完成", tint = Success)
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = Error.copy(alpha = 0.7f))
-                    }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = Error.copy(alpha = 0.72f))
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text("编辑")
+                }
+                Button(onClick = onDone, shape = RoundedCornerShape(14.dp)) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text(if (task.isAlerting()) "已处理" else "完成")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TaskMetaChip(text: String, tone: Color) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tone.copy(alpha = 0.12f)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = tone,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
