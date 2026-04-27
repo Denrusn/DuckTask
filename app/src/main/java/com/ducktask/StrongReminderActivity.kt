@@ -7,6 +7,8 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -14,12 +16,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -246,13 +252,29 @@ private fun LongPressDismissButton(onDismiss: () -> Unit) {
     var hint by remember { mutableStateOf("长按 3 秒解除提醒") }
     var progressJob by remember { mutableStateOf<Job?>(null) }
     var completed by remember { mutableStateOf(false) }
+    var isHolding by remember { mutableStateOf(false) }
+
+    // Scale animation for button press effect
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isHolding) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "buttonScale"
+    )
+
+    // Success green color
+    val successGreen = Color(0xFF4CAF50)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = buttonScale
+                scaleY = buttonScale
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
+                        isHolding = true
                         completed = false
                         hint = "保持按住，3 秒后解除"
                         progressJob?.cancel()
@@ -267,6 +289,7 @@ private fun LongPressDismissButton(onDismiss: () -> Unit) {
                             onDismiss()
                         }
                         val released = tryAwaitRelease()
+                        isHolding = false
                         if (released && !completed) {
                             progressJob?.cancel()
                             progress = 0f
@@ -277,30 +300,50 @@ private fun LongPressDismissButton(onDismiss: () -> Unit) {
             },
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(1.dp, DuckOrange.copy(alpha = 0.28f))
+        border = BorderStroke(
+            width = if (completed) 2.dp else 1.dp,
+            color = if (completed) successGreen else DuckOrange.copy(alpha = 0.28f)
+        )
     ) {
         Column(
             modifier = Modifier
                 .background(
                     Brush.horizontalGradient(
-                        colors = listOf(
-                            DuckOrange.copy(alpha = 0.16f),
-                            DuckYellow.copy(alpha = 0.16f)
-                        )
+                        colors = if (completed) {
+                            listOf(successGreen.copy(alpha = 0.24f), successGreen.copy(alpha = 0.16f))
+                        } else {
+                            listOf(
+                                DuckOrange.copy(alpha = 0.16f),
+                                DuckYellow.copy(alpha = 0.16f)
+                            )
+                        }
                     )
                 )
                 .padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (completed) Icons.Default.Check else Icons.Default.TouchApp,
+                    contentDescription = null,
+                    tint = if (completed) successGreen else DuckOrange,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    color = if (completed) successGreen else MaterialTheme.colorScheme.onSurface
+                )
+            }
             Text(
-                text = hint,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "松手会中断进度并重新开始",
+                text = if (completed) "已完成" else "松手会中断进度并重新开始",
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
@@ -310,7 +353,7 @@ private fun LongPressDismissButton(onDismiss: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(10.dp),
-                color = DuckOrange
+                color = if (completed) successGreen else DuckOrange
             )
         }
     }

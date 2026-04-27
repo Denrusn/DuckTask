@@ -10,6 +10,8 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -19,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -42,6 +45,8 @@ class StrongReminderOverlayService : Service() {
     private var progressBar: ProgressBar? = null
     private var countdownText: TextView? = null
     private var hintView: TextView? = null
+    private var holdButton: LinearLayout? = null
+    private var holdButtonText: TextView? = null
     private var holdRunnable: Runnable? = null
     private var dismissing = false
     private var currentTaskId: String = ""
@@ -192,13 +197,10 @@ class StrongReminderOverlayService : Service() {
             topMarginDp = 12
         ).also(card::addView)
 
-        // Dismiss button
-        val button = TextView(this).apply {
-            text = "按住解除"
+        // Dismiss button with icon
+        holdButton = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            textSize = 17f
             setPadding(dp(18), dp(16), dp(18), dp(16))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -212,9 +214,28 @@ class StrongReminderOverlayService : Service() {
             ).apply {
                 topMargin = dp(16)
             }
+
+            // Touch icon
+            addView(ImageView(context).apply {
+                setImageResource(android.R.drawable.ic_menu_compass)
+                setColorFilter(Color.WHITE)
+                val iconParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                iconParams.marginEnd = dp(10)
+                layoutParams = iconParams
+            })
+
+            // Button text
+            holdButtonText = TextView(context).apply {
+                text = "按住解除"
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, Typeface.BOLD)
+                textSize = 17f
+            }
+            addView(holdButtonText)
+
             setOnTouchListener(::handleHoldTouch)
         }
-        card.addView(button)
+        card.addView(holdButton!!)
 
         root.addView(
             card,
@@ -265,6 +286,19 @@ class StrongReminderOverlayService : Service() {
         hintView?.text = "保持按住，3 秒后解除"
         progressBar?.progress = 0
         mainHandler.removeCallbacksAndMessages(null)
+
+        // Scale down animation for button press feedback
+        holdButton?.let { button ->
+            val scaleDown = ObjectAnimator.ofPropertyValuesHolder(
+                button,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 0.95f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.95f)
+            ).apply {
+                duration = 150
+                repeatCount = 0
+            }
+            scaleDown.start()
+        }
         val startedAt = SystemClock.elapsedRealtime()
         holdRunnable = object : Runnable {
             override fun run() {
@@ -301,6 +335,17 @@ class StrongReminderOverlayService : Service() {
 
     private fun dismissReminder() {
         mainHandler.removeCallbacksAndMessages(null)
+
+        // Change button to success green
+        holdButton?.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(20).toFloat()
+            colors = intArrayOf(Color.parseColor("#FF4CAF50"), Color.parseColor("#FF81C784"))
+            orientation = GradientDrawable.Orientation.LEFT_RIGHT
+        }
+        holdButtonText?.text = "已完成"
+        holdButtonText?.setTextColor(Color.WHITE)
+
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(currentNotificationId)
         if (currentLogId > 0) {
@@ -363,6 +408,8 @@ class StrongReminderOverlayService : Service() {
         countdownText = null
         progressBar = null
         hintView = null
+        holdButton = null
+        holdButtonText = null
     }
 
     private fun pillText(
