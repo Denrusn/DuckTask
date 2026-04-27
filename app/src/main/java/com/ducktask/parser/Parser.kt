@@ -600,7 +600,7 @@ private class RuleParser(
             // If state.hour is null, we can't determine yet - allow today and let adjustFirstRun handle it
             if (state.hour != null) {
                 val targetHour = state.hour
-                val sameDayTime = LocalDateTime.of(now.toLocalDate(), LocalTime.of(targetHour, state.minute))
+                val sameDayTime = LocalDateTime.of(now.toLocalDate(), LocalTime.of(targetHour, state.minute ?: 0))
                 if (!sameDayTime.isAfter(now)) delta = 7
             }
             // If state.hour is null, keep delta = 0 (today)
