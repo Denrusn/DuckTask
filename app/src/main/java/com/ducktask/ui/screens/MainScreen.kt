@@ -449,7 +449,7 @@ private fun PermissionCenterContent(
 
     // Guided flow state management
     var guidedPermissions by remember { mutableStateOf<List<AppPermissionType>>(emptyList()) }
-    var guidedIndex by remember { mutableIntStateOf<Int>(0) }
+    var guidedIndex by mutableIntStateOf(0)
     var isProcessing by remember { mutableStateOf(false) }
     var currentProcessingPermission by remember { mutableStateOf<AppPermissionType?>(null) }
 
