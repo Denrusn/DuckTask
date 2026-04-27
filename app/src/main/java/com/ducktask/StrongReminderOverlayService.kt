@@ -358,8 +358,11 @@ class StrongReminderOverlayService : Service() {
     private fun removeOverlay() {
         overlayView?.let { view ->
             runCatching { windowManager.removeView(view) }
-            overlayView = null
         }
+        overlayView = null
+        countdownText = null
+        progressBar = null
+        hintView = null
     }
 
     private fun pillText(
