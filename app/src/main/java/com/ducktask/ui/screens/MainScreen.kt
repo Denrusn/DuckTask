@@ -549,30 +549,34 @@ private fun PermissionCenterContent(
                 modifier = Modifier.fillMaxWidth(),
                 containerColor = if (isGuidedFlowActive) DuckOrange else MaterialTheme.colorScheme.primary,
                 contentColor = if (isGuidedFlowActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary,
-                expanded = !isProcessing
-            ) {
-                if (isGuidedFlowActive) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
+                expanded = !isProcessing,
+                icon = {
+                    if (isGuidedFlowActive) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                text = {
                     val currentPerm = currentProcessingPermission?.let { permissionDisplayName(it) } ?: ""
                     Text(
-                        text = if (currentPerm.isNotEmpty()) "正在处理: $currentPerm" else "正在引导授权中...",
+                        text = if (isGuidedFlowActive) {
+                            if (currentPerm.isNotEmpty()) "正在处理: $currentPerm" else "正在引导授权中..."
+                        } else {
+                            "一键授权全部权限"
+                        },
                         fontWeight = FontWeight.Bold
                     )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("一键授权全部权限", fontWeight = FontWeight.Bold)
                 }
-            }
+            )
         }
 
         items(sortedPermissions, key = { it.type.name }) { issue ->
