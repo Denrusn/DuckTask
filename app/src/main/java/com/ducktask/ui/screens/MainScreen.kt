@@ -446,12 +446,51 @@ private fun PermissionCenterContent(
         }
     }
 
-    // Start guided permission flow - opens the first unresolved permission
-    val startGuidedPermissionFlow: () -> Unit = {
-        if (sortedPermissions.isNotEmpty()) {
-            onResolvePermission(sortedPermissions[0].type)
+    // Guided flow state management
+    var guidedPermissions by remember { mutableStateOf<List<AppPermissionType>>(emptyList()) }
+    var guidedIndex by remember { mutableIntStateOf(0) }
+
+    // Automatically move to next permission when previous one is resolved
+    LaunchedEffect(permissionIssues) {
+        if (guidedPermissions.isEmpty()) return@LaunchedEffect
+
+        // Find the next unresolved permission in our queue
+        while (guidedIndex < guidedPermissions.size) {
+            val nextType = guidedPermissions[guidedIndex]
+            // Check if this permission still needs resolution
+            if (permissionIssues.none { it.type == nextType }) {
+                // Permission was resolved, move to next
+                guidedIndex++
+            } else {
+                break
+            }
+        }
+
+        // Open the next unresolved permission if any remain
+        if (guidedIndex < guidedPermissions.size) {
+            onResolvePermission(guidedPermissions[guidedIndex])
+            guidedIndex++
+        } else {
+            // All permissions in queue have been resolved (or checked)
+            guidedPermissions = emptyList()
+            guidedIndex = 0
         }
     }
+
+    // Start guided permission flow - opens the first unresolved permission
+    val startGuidedPermissionFlow: () -> Unit = {
+        // Filter out AUTO_START as it can't be auto-opened
+        guidedPermissions = sortedPermissions
+            .filter { it.type != AppPermissionType.AUTO_START }
+            .map { it.type }
+        guidedIndex = 0
+        if (guidedPermissions.isNotEmpty()) {
+            onResolvePermission(guidedPermissions[0])
+            guidedIndex++
+        }
+    }
+
+    val isGuidedFlowActive = guidedPermissions.isNotEmpty()
 
     if (sortedPermissions.isEmpty()) {
         EmptyState(
@@ -492,16 +531,26 @@ private fun PermissionCenterContent(
             ExtendedFloatingActionButton(
                 onClick = startGuidedPermissionFlow,
                 modifier = Modifier.fillMaxWidth(),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = if (isGuidedFlowActive) DuckOrange else MaterialTheme.colorScheme.primary,
+                contentColor = if (isGuidedFlowActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary
             ) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("一键授权全部权限", fontWeight = FontWeight.Bold)
+                if (isGuidedFlowActive) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text("正在引导授权中...", fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text("一键授权全部权限", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
