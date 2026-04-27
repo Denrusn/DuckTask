@@ -449,10 +449,25 @@ private fun PermissionCenterContent(
     // Guided flow state management
     var guidedPermissions by remember { mutableStateOf<List<AppPermissionType>>(emptyList()) }
     var guidedIndex by remember { mutableIntStateOf(0) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var currentProcessingPermission by remember { mutableStateOf<AppPermissionType?>(null) }
+
+    // Helper to get display name for permission type
+    val permissionDisplayName = { type: AppPermissionType ->
+        when (type) {
+            AppPermissionType.NOTIFICATION -> "通知权限"
+            AppPermissionType.EXACT_ALARM -> "精确闹钟权限"
+            AppPermissionType.OVERLAY -> "悬浮窗权限"
+            AppPermissionType.FULL_SCREEN -> "全屏权限"
+            AppPermissionType.BATTERY_OPTIMIZATION -> "电池优化权限"
+            AppPermissionType.AUTO_START -> "自启动权限"
+        }
+    }
 
     // Automatically move to next permission when previous one is resolved
-    LaunchedEffect(permissionIssues) {
-        if (guidedPermissions.isEmpty()) return@LaunchedEffect
+    // Process only ONE permission per trigger to prevent re-entrancy issues
+    LaunchedEffect(permissionIssues, guidedPermissions, guidedIndex) {
+        if (guidedPermissions.isEmpty() || isProcessing) return@LaunchedEffect
 
         // Find the next unresolved permission in our queue
         while (guidedIndex < guidedPermissions.size) {
@@ -462,19 +477,19 @@ private fun PermissionCenterContent(
                 // Permission was resolved, move to next
                 guidedIndex++
             } else {
-                break
+                // Found next unresolved permission, open it
+                currentProcessingPermission = nextType
+                isProcessing = true
+                onResolvePermission(nextType)
+                guidedIndex++
+                isProcessing = false
+                return@LaunchedEffect  // Exit to let user authorize, effect will re-trigger on return
             }
         }
-
-        // Open the next unresolved permission if any remain
-        if (guidedIndex < guidedPermissions.size) {
-            onResolvePermission(guidedPermissions[guidedIndex])
-            guidedIndex++
-        } else {
-            // All permissions in queue have been resolved (or checked)
-            guidedPermissions = emptyList()
-            guidedIndex = 0
-        }
+        // All done
+        guidedPermissions = emptyList()
+        guidedIndex = 0
+        currentProcessingPermission = null
     }
 
     // Start guided permission flow - opens the first unresolved permission
@@ -529,10 +544,11 @@ private fun PermissionCenterContent(
         item {
             Spacer(modifier = Modifier.height(4.dp))
             ExtendedFloatingActionButton(
-                onClick = startGuidedPermissionFlow,
+                onClick = { if (!isProcessing) startGuidedPermissionFlow() },
                 modifier = Modifier.fillMaxWidth(),
                 containerColor = if (isGuidedFlowActive) DuckOrange else MaterialTheme.colorScheme.primary,
-                contentColor = if (isGuidedFlowActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary
+                contentColor = if (isGuidedFlowActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary,
+                expanded = !isProcessing
             ) {
                 if (isGuidedFlowActive) {
                     CircularProgressIndicator(
@@ -541,7 +557,11 @@ private fun PermissionCenterContent(
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.size(8.dp))
-                    Text("正在引导授权中...", fontWeight = FontWeight.Bold)
+                    val currentPerm = currentProcessingPermission?.let { permissionDisplayName(it) } ?: ""
+                    Text(
+                        text = if (currentPerm.isNotEmpty()) "正在处理: $currentPerm" else "正在引导授权中...",
+                        fontWeight = FontWeight.Bold
+                    )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Security,
