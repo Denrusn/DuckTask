@@ -40,6 +40,7 @@ class StrongReminderOverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private var overlayView: View? = null
     private var progressBar: ProgressBar? = null
+    private var countdownText: TextView? = null
     private var hintView: TextView? = null
     private var holdRunnable: Runnable? = null
     private var dismissing = false
@@ -99,7 +100,7 @@ class StrongReminderOverlayService : Service() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setPadding(dp(28), dp(28), dp(28), dp(28))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(30).toFloat()
@@ -109,6 +110,7 @@ class StrongReminderOverlayService : Service() {
             elevation = dp(10).toFloat()
         }
 
+        // Header pill
         card.addView(
             pillText(
                 text = "强提醒进行中",
@@ -117,28 +119,35 @@ class StrongReminderOverlayService : Service() {
             )
         )
 
-        card.addView(
-            textView(
-                text = "请立即处理",
-                textSizeSp = 16f,
-                textColor = Color.parseColor("#FFFF6B35"),
-                isBold = true,
-                gravity = Gravity.CENTER_HORIZONTAL,
-                topMarginDp = 14
-            )
-        )
+        // Large countdown display
+        countdownText = TextView(this).apply {
+            text = "3"
+            setTextColor(Color.parseColor("#FFFF6B35"))
+            setTypeface(typeface, Typeface.BOLD)
+            textSize = 80f
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, dp(16), 0, dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(8)
+            }
+        }.also(card::addView)
 
+        // Event title
         card.addView(
             textView(
                 text = event,
-                textSizeSp = 28f,
+                textSizeSp = 26f,
                 textColor = Color.parseColor("#FF181310"),
                 isBold = true,
                 gravity = Gravity.CENTER_HORIZONTAL,
-                topMarginDp = 10
+                topMarginDp = 8
             )
         )
 
+        // Description if available
         if (description.isNotBlank()) {
             card.addView(
                 capsuleText(
@@ -150,6 +159,7 @@ class StrongReminderOverlayService : Service() {
             )
         }
 
+        // Instruction text
         card.addView(
             capsuleText(
                 text = "长按下方按钮 3 秒后才可解除，松手会重新计时。",
@@ -159,15 +169,7 @@ class StrongReminderOverlayService : Service() {
             )
         )
 
-        hintView = textView(
-            text = "长按 3 秒解除提醒",
-            textSizeSp = 18f,
-            textColor = Color.parseColor("#FF1E1712"),
-            isBold = true,
-            gravity = Gravity.CENTER_HORIZONTAL,
-            topMarginDp = 18
-        ).also(card::addView)
-
+        // Progress bar
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = HOLD_DURATION_MS.toInt()
             progress = 0
@@ -176,10 +178,21 @@ class StrongReminderOverlayService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(10)
             ).apply {
-                topMargin = dp(12)
+                topMargin = dp(16)
             }
         }.also(card::addView)
 
+        // Hint text
+        hintView = textView(
+            text = "长按 3 秒解除提醒",
+            textSizeSp = 18f,
+            textColor = Color.parseColor("#FF1E1712"),
+            isBold = true,
+            gravity = Gravity.CENTER_HORIZONTAL,
+            topMarginDp = 12
+        ).also(card::addView)
+
+        // Dismiss button
         val button = TextView(this).apply {
             text = "按住解除"
             gravity = Gravity.CENTER
@@ -257,9 +270,18 @@ class StrongReminderOverlayService : Service() {
             override fun run() {
                 val elapsed = (SystemClock.elapsedRealtime() - startedAt).coerceAtMost(HOLD_DURATION_MS)
                 progressBar?.progress = elapsed.toInt()
+                // Update countdown display (3, 2, 1)
+                val remaining = ((HOLD_DURATION_MS - elapsed) / 1000).toInt() + 1
+                countdownText?.text = when {
+                    remaining >= 3 -> "3"
+                    remaining >= 2 -> "2"
+                    remaining >= 1 -> "1"
+                    else -> "0"
+                }
                 if (elapsed >= HOLD_DURATION_MS) {
                     dismissing = true
                     hintView?.text = "提醒已解除"
+                    countdownText?.text = "0"
                     dismissReminder()
                 } else {
                     mainHandler.postDelayed(this, 16)
@@ -274,6 +296,7 @@ class StrongReminderOverlayService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         progressBar?.progress = 0
         hintView?.text = "按住时间不足，请继续长按"
+        countdownText?.text = "3"
     }
 
     private fun dismissReminder() {
