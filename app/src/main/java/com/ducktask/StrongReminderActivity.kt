@@ -192,8 +192,10 @@ private fun StrongReminderScreen(
             RingFillDismissButton(
                 onDismiss = {
                     showRipple = true
-                    kotlinx.coroutines.delay(500)
-                    onDismiss()
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        kotlinx.coroutines.delay(500)
+                        onDismiss()
+                    }
                 }
             )
         }
@@ -394,6 +396,13 @@ private fun PulseRippleEffect(
     }
 }
 
+// 粒子状态数据类
+private data class ParticleState(
+    val angle: Float,
+    val distance: Float,
+    val size: Float
+)
+
 @Composable
 private fun ParticleBurst(
     isActive: Boolean,
@@ -401,12 +410,6 @@ private fun ParticleBurst(
     modifier: Modifier = Modifier
 ) {
     var particles by remember { mutableStateOf<List<ParticleState>>(emptyList()) }
-
-    data class ParticleState(
-        val angle: Float,
-        val distance: Float,
-        val size: Float
-    )
 
     val progress by animateFloatAsState(
         targetValue = if (isActive) 1f else 0f,
