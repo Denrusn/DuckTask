@@ -177,4 +177,39 @@ class TimeParserTest {
         assertNotNull(failure)
         assertNull(failure?.cause)
     }
+
+    @Test
+    fun parsesWeeklyReminderOnSameDayMorning() {
+        // 2026年4月27日（周一）08:02 设置"每周一早上8点30"
+        TimeParser.setClock(Clock.fixed(
+            LocalDateTime.of(2026, 4, 27, 8, 2).atZone(zone).toInstant(),
+            zone
+        ))
+        val parsed = TimeParser.parse("每周一早上8点30提醒我打卡", LocalDateTime.of(2026, 4, 27, 8, 2))
+
+        // 08:30 还没到（当前是08:02），所以应该返回今天08:30
+        assertEquals(27, parsed.time.dayOfMonth)
+        assertEquals(4, parsed.time.monthValue)
+        assertEquals(8, parsed.time.hour)
+        assertEquals(30, parsed.time.minute)
+        assertEquals(1, parsed.repeat?.weeks)
+        assertEquals("打卡", parsed.event)
+    }
+
+    @Test
+    fun parsesWeeklyReminderOnSameDayAfternoon() {
+        // 2026年4月27日（周一）09:00 设置"每周一早上8点30"
+        TimeParser.setClock(Clock.fixed(
+            LocalDateTime.of(2026, 4, 27, 9, 0).atZone(zone).toInstant(),
+            zone
+        ))
+        val parsed = TimeParser.parse("每周一早上8点30提醒我打卡", LocalDateTime.of(2026, 4, 27, 9, 0))
+
+        // 08:30 已经过了（当前是09:00），所以应该返回下周一
+        assertEquals(4, parsed.time.monthValue)
+        assertEquals(4, parsed.time.dayOfMonth)
+        assertEquals(8, parsed.time.hour)
+        assertEquals(30, parsed.time.minute)
+        assertEquals(1, parsed.repeat?.weeks)
+    }
 }
