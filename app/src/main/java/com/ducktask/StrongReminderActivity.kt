@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -130,6 +131,10 @@ private fun StrongReminderScreen(
 ) {
     BackHandler(enabled = true) { }
 
+    var showRipple by remember { mutableStateOf(false) }
+    val rippleColor = DuckOrange
+    val successGreen = Color(0xFF4CAF50)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -149,10 +154,18 @@ private fun StrongReminderScreen(
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(DuckOrange.copy(alpha = 0.12f), Color.Transparent)
+                        colors = listOf(rippleColor.copy(alpha = 0.12f), Color.Transparent)
                     )
                 )
         )
+
+        // 脉冲波纹层
+        if (showRipple) {
+            PulseRippleEffect(
+                isActive = showRipple,
+                color = rippleColor
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -171,7 +184,13 @@ private fun StrongReminderScreen(
             )
 
             // 环形填充按钮
-            RingFillDismissButton(onDismiss = onDismiss)
+            RingFillDismissButton(
+                onDismiss = {
+                    showRipple = true
+                    kotlinx.coroutines.delay(500)
+                    onDismiss()
+                }
+            )
         }
     }
 }
@@ -311,6 +330,61 @@ private fun RingFillDismissButton(onDismiss: () -> Unit) {
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+        }
+    }
+}
+
+@Composable
+private fun PulseRippleEffect(
+    isActive: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    var rippleScale by remember { mutableFloatStateOf(0f) }
+    var rippleAlpha by remember { mutableFloatStateOf(0f) }
+
+    val animatedScale by animateFloatAsState(
+        targetValue = rippleScale,
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+        label = "rippleScale"
+    )
+    val animatedAlpha by animateFloatAsState(
+        targetValue = rippleAlpha,
+        animationSpec = tween(durationMillis = 1000),
+        label = "rippleAlpha"
+    )
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            rippleScale = 0f
+            rippleAlpha = 1f
+            // 快速扩散
+            rippleScale = 1f
+            rippleAlpha = 0f
+        }
+    }
+
+    if (animatedAlpha > 0.01f) {
+        Canvas(modifier = modifier.fillMaxSize()) {
+            val maxRadius = size.minDimension / 2 * animatedScale
+
+            // 外圈波纹
+            drawCircle(
+                color = color.copy(alpha = animatedAlpha * 0.3f),
+                radius = maxRadius,
+                center = center,
+                style = Stroke(width = 3.dp.toPx())
+            )
+
+            // 内圈波纹（延迟效果）
+            if (animatedScale > 0.3f) {
+                drawCircle(
+                    color = color.copy(alpha = animatedAlpha * 0.2f),
+                    radius = maxRadius * 0.7f,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
         }
     }
 }
