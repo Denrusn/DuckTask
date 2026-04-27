@@ -206,7 +206,7 @@ class TimeParserTest {
         val parsed = TimeParser.parse("每周一早上8点30提醒我打卡", LocalDateTime.of(2026, 4, 27, 9, 0))
 
         // 08:30 已经过了（当前是09:00），所以应该返回下周一
-        assertEquals(4, parsed.time.monthValue)
+        assertEquals(5, parsed.time.monthValue)
         assertEquals(4, parsed.time.dayOfMonth)
         assertEquals(8, parsed.time.hour)
         assertEquals(30, parsed.time.minute)
