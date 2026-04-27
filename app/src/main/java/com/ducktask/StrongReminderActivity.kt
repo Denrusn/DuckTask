@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -349,11 +350,13 @@ private fun LongPressDismissButton(onDismiss: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
             )
             LinearProgressIndicator(
-                progress = progress,
+                progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(10.dp),
-                color = if (completed) successGreen else DuckOrange
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                color = if (completed) successGreen else DuckOrange,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
             )
         }
     }
