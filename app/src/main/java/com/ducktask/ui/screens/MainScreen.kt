@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -744,26 +745,42 @@ private fun TaskCard(
                         modifier = Modifier.padding(top = 14.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
-                }
 
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = Error.copy(alpha = 0.72f))
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text("编辑")
-                }
-                Button(onClick = onDone, shape = RoundedCornerShape(14.dp)) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text(if (task.isAlerting()) "已处理" else "完成")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除",
+                                tint = Error.copy(alpha = 0.65f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        TextButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text("编辑", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Button(
+                            onClick = onDone,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(if (task.isAlerting()) "已处理" else "完成")
+                        }
+                    }
                 }
             }
         }
