@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -431,7 +432,28 @@ private fun PermissionCenterContent(
     onResolvePermission: (AppPermissionType) -> Unit,
     onAcknowledgePermission: (AppPermissionType) -> Unit
 ) {
-    if (permissionIssues.isEmpty()) {
+    // Sort permissions by importance: NOTIFICATION > EXACT_ALARM > OVERLAY > FULL_SCREEN > BATTERY_OPTIMIZATION > AUTO_START
+    val sortedPermissions = remember(permissionIssues) {
+        permissionIssues.sortedBy { issue ->
+            when (issue.type) {
+                AppPermissionType.NOTIFICATION -> 0
+                AppPermissionType.EXACT_ALARM -> 1
+                AppPermissionType.OVERLAY -> 2
+                AppPermissionType.FULL_SCREEN -> 3
+                AppPermissionType.BATTERY_OPTIMIZATION -> 4
+                AppPermissionType.AUTO_START -> 5
+            }
+        }
+    }
+
+    // Start guided permission flow - opens the first unresolved permission
+    val startGuidedPermissionFlow: () -> Unit = {
+        if (sortedPermissions.isNotEmpty()) {
+            onResolvePermission(sortedPermissions[0].type)
+        }
+    }
+
+    if (sortedPermissions.isEmpty()) {
         EmptyState(
             title = "运行保障已就绪",
             subtitle = "通知、定时和后台提醒相关权限都已配置完成。"
@@ -463,7 +485,27 @@ private fun PermissionCenterContent(
                 }
             }
         }
-        items(permissionIssues, key = { it.type.name }) { issue ->
+
+        // One-click authorization button
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            ExtendedFloatingActionButton(
+                onClick = startGuidedPermissionFlow,
+                modifier = Modifier.fillMaxWidth(),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("一键授权全部权限", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        items(sortedPermissions, key = { it.type.name }) { issue ->
             Card(
                 shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
