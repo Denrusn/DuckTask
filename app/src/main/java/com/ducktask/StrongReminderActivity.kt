@@ -8,22 +8,48 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.ui.theme.DuckOrange
@@ -144,11 +170,146 @@ private fun StrongReminderScreen(
                 color = Color.White
             )
 
-            // 环形填充按钮（临时占位，稍后会替换）
+            // 环形填充按钮
+            RingFillDismissButton(onDismiss = onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun RingFillDismissButton(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var isHolding by remember { mutableStateOf(false) }
+    var isCompleted by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var progressJob by remember { mutableStateOf<Job?>(null) }
+
+    // 环形进度动画
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 50, easing = LinearEasing),
+        label = "ringProgress"
+    )
+
+    // 按钮缩放动画
+    val buttonScale by animateFloatAsState(
+        targetValue = when {
+            isCompleted -> 1.08f
+            isHolding -> 0.94f
+            else -> 1f
+        },
+        animationSpec = tween(durationMillis = 120),
+        label = "buttonScale"
+    )
+
+    // 成功绿色
+    val successGreen = Color(0xFF4CAF50)
+    val ringColor = if (isCompleted) successGreen else DuckOrange
+
+    Box(
+        modifier = Modifier
+            .size(220.dp)
+            .graphicsLayer {
+                scaleX = buttonScale
+                scaleY = buttonScale
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isHolding = true
+                        isCompleted = false
+                        progressJob?.cancel()
+
+                        // 开始环形填充
+                        progressJob = scope.launch {
+                            repeat(30) { step ->
+                                delay(100)
+                                progress = (step + 1) / 30f
+                            }
+                            // 完成！
+                            isCompleted = true
+                            delay(350)
+                            onDismiss()
+                        }
+
+                        val released = tryAwaitRelease()
+                        isHolding = false
+                        if (released && !isCompleted) {
+                            progressJob?.cancel()
+                            progress = 0f
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // 背景光晕
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            ringColor.copy(alpha = 0.15f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+
+        // 环形进度（Canvas 绘制）
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 10.dp.toPx()
+            val radius = (size.minDimension - strokeWidth) / 2
+            val center = this.center
+
+            // 背景圆环
+            drawCircle(
+                color = ringColor.copy(alpha = 0.2f),
+                radius = radius,
+                center = center,
+                style = Stroke(width = strokeWidth)
+            )
+
+            // 进度圆弧
+            drawArc(
+                color = ringColor,
+                startAngle = -90f,
+                sweepAngle = 360f * animatedProgress,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(
+                    center.x - radius,
+                    center.y - radius
+                ),
+                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                style = Stroke(
+                    width = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+            )
+        }
+
+        // 中心内容
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = if (isCompleted) Icons.Default.Check else Icons.Default.TouchApp,
+                contentDescription = null,
+                tint = if (isCompleted) successGreen else ringColor,
+                modifier = Modifier.size(48.dp)
+            )
             Text(
-                text = "长按解锁",
+                text = when {
+                    isCompleted -> "完成"
+                    isHolding -> "保持"
+                    else -> "长按解锁"
+                },
                 style = MaterialTheme.typography.titleLarge,
-                color = DuckOrange
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
     }
