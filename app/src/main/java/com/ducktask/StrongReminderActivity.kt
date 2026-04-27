@@ -51,6 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.ui.theme.DuckOrange
@@ -164,6 +165,10 @@ private fun StrongReminderScreen(
             PulseRippleEffect(
                 isActive = showRipple,
                 color = rippleColor
+            )
+            ParticleBurst(
+                isActive = showRipple,
+                color = successGreen  // 成功时用绿色
             )
         }
 
@@ -385,6 +390,64 @@ private fun PulseRippleEffect(
                     style = Stroke(width = 2.dp.toPx())
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ParticleBurst(
+    isActive: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    var particles by remember { mutableStateOf<List<ParticleState>>(emptyList()) }
+
+    data class ParticleState(
+        val angle: Float,
+        val distance: Float,
+        val size: Float
+    )
+
+    val progress by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = tween(durationMillis = 700),
+        label = "particleProgress"
+    )
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            // 生成 16 个粒子
+            particles = (0 until 16).map { i ->
+                ParticleState(
+                    angle = i * 22.5f - 90f, // 均匀分布
+                    distance = 0.35f + Random.nextFloat() * 0.15f,
+                    size = 6f + Random.nextFloat() * 8f
+                )
+            }
+            delay(700)
+            particles = emptyList()
+        }
+    }
+
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val center = this.center
+        val maxDistance = size.minDimension / 2
+
+        particles.forEach { particle ->
+            val currentDistance = maxDistance * particle.distance * progress
+            val radians = Math.toRadians(particle.angle.toDouble())
+            val x = center.x + (currentDistance * kotlin.math.cos(radians)).toFloat()
+            val y = center.y + (currentDistance * kotlin.math.sin(radians)).toFloat()
+
+            // 粒子渐隐
+            val alpha = (1f - progress) * 0.9f
+            val currentSize = particle.size * (1f - progress * 0.5f)
+
+            drawCircle(
+                color = color.copy(alpha = alpha),
+                radius = currentSize,
+                center = androidx.compose.ui.geometry.Offset(x, y)
+            )
         }
     }
 }
