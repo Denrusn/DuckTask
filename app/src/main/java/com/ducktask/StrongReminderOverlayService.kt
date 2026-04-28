@@ -1,8 +1,8 @@
 package com.ducktask.app
 
+import android.animation.ObjectAnimator
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.LinearInterpolator
-import android.animation.ObjectAnimator
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -27,7 +27,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -50,7 +49,7 @@ class StrongReminderOverlayService : Service() {
     private lateinit var windowManager: WindowManager
 
     // UI 组件
-    private var overlayView: View? = null
+    private var overlayView: FrameLayout? = null
     private var eventText: TextView? = null
     private var glowView: View? = null
     private var buttonContainer: FrameLayout? = null
@@ -254,7 +253,7 @@ class StrongReminderOverlayService : Service() {
         holdRunnable = object : Runnable {
             override fun run() {
                 val elapsed = (SystemClock.elapsedRealtime() - startedAt).coerceAtMost(HOLD_DURATION_MS)
-                val progress = elapsed / HOLD_DURATION_MS
+                val progress = elapsed.toFloat() / HOLD_DURATION_MS.toFloat()
                 ringView?.setProgress(progress)
 
                 if (elapsed >= HOLD_DURATION_MS) {
@@ -366,7 +365,7 @@ class StrongReminderOverlayService : Service() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.TRANSPARENT)
-                setStroke(dp(3f), Color.parseColor("#80FF6B35"))
+                setStroke(dp(3), Color.parseColor("#80FF6B35"))
             }
         }
         val size = dp(220)
@@ -380,7 +379,7 @@ class StrongReminderOverlayService : Service() {
             .scaleX(3f)
             .scaleY(3f)
             .alpha(0f)
-            .setDuration(1000)
+            .setDuration(1000L)
             .setInterpolator(LinearInterpolator())
             .withEndAction {
                 root.removeView(ripple)
