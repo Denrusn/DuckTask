@@ -3,6 +3,7 @@ package com.ducktask.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.PendingOverlayManager
@@ -26,7 +27,7 @@ class OverlayUnlockReceiver : BroadcastReceiver() {
                 .putExtra(StrongReminderOverlayService.EXTRA_LOG_ID, pending.logId)
                 .putExtra(StrongReminderOverlayService.EXTRA_NOTIFICATION_ID, pending.notificationId)
             DuckTaskNotifications.ensureChannel(context)
-            context.startService(overlayIntent)
+            ContextCompat.startForegroundService(context, overlayIntent)
             // 不在这里清除 PendingOverlay，让悬浮窗完成后再清除
         }
     }
