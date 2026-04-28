@@ -48,9 +48,12 @@ Parser parses in phases: repeat rules → relative duration → relative date �
 
 ### Reminder System
 1. **ReminderScheduler** sets exact alarms via AlarmManager
-2. **AlarmReceiver** triggers on alarm, launches **StrongReminderOverlayService** (SYSTEM_ALERT_WINDOW overlay) for strong reminders
-3. **ReminderActionReceiver** handles user acknowledgment (notification tap or overlay dismiss)
-4. Boot receiver reschedules all pending tasks after device restart
+2. **AlarmReceiver** triggers on alarm, shows notification via **DuckTaskNotifications**
+3. For STRONG reminders: **StrongReminderOverlayService** displays a full-screen overlay (requires SYSTEM_ALERT_WINDOW permission)
+4. **ReminderActionReceiver** handles user acknowledgment (notification action button)
+5. Boot receiver reschedules all pending tasks after device restart
+
+**Note:** Strong reminders use overlay only (no in-app Activity fallback). The overlay shows a circular hold-to-dismiss button with ring progress animation and particle burst effects on completion.
 
 ### Key Constants
 - `DEFAULT_USER_ID = "local"` - Single-user app, all tasks belong to this ID
