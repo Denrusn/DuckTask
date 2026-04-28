@@ -10,6 +10,8 @@ import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
 import com.ducktask.app.util.AppLogger
+import com.ducktask.app.util.PendingOverlayManager
+import com.ducktask.app.util.PermissionUtils
 import com.ducktask.app.util.nextRunAfter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,9 +48,23 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     ReminderScheduler(context.applicationContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
-                    // STRONG 模式：仅通过悬浮窗提醒，不使用应用内弹窗
+                    // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        StrongReminderOverlayService.startIfPossible(context, task, logId)
+                        if (PermissionUtils.canDrawOverlay(this) && !PermissionUtils.isDeviceLocked(this)) {
+                            // 设备未锁屏，直接显示悬浮窗
+                            StrongReminderOverlayService.startIfPossible(this, updatedTask, logId)
+                        } else {
+                            // 设备锁屏，保存待显示状态，等解锁后显示
+                            PendingOverlayManager.savePending(
+                                this,
+                                task.taskId,
+                                task.event,
+                                task.description,
+                                logId,
+                                task.taskId.hashCode()
+                            )
+                            AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                        }
                     }
                 } else {
                     dao.update(task.copy(status = TaskStatus.ALERTING))
@@ -62,9 +78,23 @@ class AlarmReceiver : BroadcastReceiver() {
                         )
                     )
                     DuckTaskNotifications.showReminder(context, task, null, logId)
-                    // STRONG 模式：仅通过悬浮窗提醒，不使用应用内弹窗
+                    // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        StrongReminderOverlayService.startIfPossible(context, task, logId)
+                        if (PermissionUtils.canDrawOverlay(this) && !PermissionUtils.isDeviceLocked(this)) {
+                            // 设备未锁屏，直接显示悬浮窗
+                            StrongReminderOverlayService.startIfPossible(this, task, logId)
+                        } else {
+                            // 设备锁屏，保存待显示状态，等解锁后显示
+                            PendingOverlayManager.savePending(
+                                this,
+                                task.taskId,
+                                task.event,
+                                task.description,
+                                logId,
+                                task.taskId.hashCode()
+                            )
+                            AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                        }
                     }
                 }
             } catch (t: Throwable) {

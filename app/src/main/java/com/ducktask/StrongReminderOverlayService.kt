@@ -39,6 +39,7 @@ import com.ducktask.app.domain.model.Task
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.util.AppLogger
+import com.ducktask.app.util.PendingOverlayManager
 import com.ducktask.app.util.PermissionUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -166,6 +167,9 @@ class StrongReminderOverlayService : Service() {
         runCatching {
             windowManager.addView(root, params)
             overlayView = root
+
+            // 如果有待显示状态，清除它
+            PendingOverlayManager.clearPending(this)
         }.onFailure {
             AppLogger.error("StrongReminderOverlay", "Failed to add overlay view", it)
             stopSelf()
