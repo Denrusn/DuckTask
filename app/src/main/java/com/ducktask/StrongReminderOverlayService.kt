@@ -504,23 +504,8 @@ class StrongReminderOverlayService : Service() {
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
 
         fun startIfPossible(context: android.content.Context, task: Task, logId: Long): Boolean {
-            if (!PermissionUtils.canDrawOverlay(context) || PermissionUtils.isDeviceLocked(context)) {
-                return false
-            }
-            val notificationId = task.taskId.hashCode()
-            val intent = Intent(context, StrongReminderOverlayService::class.java)
-                .putExtra(EXTRA_TASK_ID, task.taskId)
-                .putExtra(EXTRA_EVENT, task.event)
-                .putExtra(EXTRA_DESCRIPTION, task.description)
-                .putExtra(EXTRA_LOG_ID, logId)
-                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-            return runCatching {
-                DuckTaskNotifications.ensureChannel(context)
-                ContextCompat.startForegroundService(context, intent)
-                true
-            }.onFailure {
-                AppLogger.error("StrongReminderOverlay", "Failed to start overlay service", it)
-            }.getOrDefault(false)
+            // 始终返回 false，强制使用 StrongReminderActivity（全屏 Activity 有更好的 UI）
+            return false
         }
     }
 }
