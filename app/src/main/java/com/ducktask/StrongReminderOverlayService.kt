@@ -533,11 +533,11 @@ class StrongReminderOverlayService : Service() {
     companion object {
         const val DISMISS_METHOD_OVERLAY = "overlay"
         private const val HOLD_DURATION_MS = 3_000L
-        private const val EXTRA_TASK_ID = "task_id"
-        private const val EXTRA_EVENT = "event"
-        private const val EXTRA_DESCRIPTION = "description"
-        private const val EXTRA_LOG_ID = "log_id"
-        private const val EXTRA_NOTIFICATION_ID = "notification_id"
+        const val EXTRA_TASK_ID = "task_id"
+        const val EXTRA_EVENT = "event"
+        const val EXTRA_DESCRIPTION = "description"
+        const val EXTRA_LOG_ID = "log_id"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
 
         fun startIfPossible(context: Context, task: Task, logId: Long): Boolean {
             if (!PermissionUtils.canDrawOverlay(context) || PermissionUtils.isDeviceLocked(context)) {
