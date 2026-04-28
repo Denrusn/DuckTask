@@ -24,8 +24,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
 
         CoroutineScope(Dispatchers.IO).launch {
+            val appContext = context.applicationContext
             try {
-                val database = AppDatabase.getInstance(context)
+                val database = AppDatabase.getInstance(appContext)
                 val dao = database.taskDao()
                 val logDao = database.reminderLogDao()
                 val task = dao.getTaskByTaskId(taskId) ?: return@launch
@@ -46,17 +47,17 @@ class AlarmReceiver : BroadcastReceiver() {
                             nextRunTime = nextRunTime
                         )
                     )
-                    ReminderScheduler(context.applicationContext).schedule(updatedTask)
-                    DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
+                    ReminderScheduler(appContext).schedule(updatedTask)
+                    DuckTaskNotifications.showReminder(appContext, task, nextRunTime, logId)
                     // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (PermissionUtils.canDrawOverlay(this) && !PermissionUtils.isDeviceLocked(this)) {
+                        if (PermissionUtils.canDrawOverlay(appContext) && !PermissionUtils.isDeviceLocked(appContext)) {
                             // 设备未锁屏，直接显示悬浮窗
-                            StrongReminderOverlayService.startIfPossible(this, updatedTask, logId)
+                            StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
                         } else {
                             // 设备锁屏，保存待显示状态，等解锁后显示
                             PendingOverlayManager.savePending(
-                                this,
+                                appContext,
                                 task.taskId,
                                 task.event,
                                 task.description,
@@ -77,16 +78,16 @@ class AlarmReceiver : BroadcastReceiver() {
                             triggeredAt = System.currentTimeMillis()
                         )
                     )
-                    DuckTaskNotifications.showReminder(context, task, null, logId)
+                    DuckTaskNotifications.showReminder(appContext, task, null, logId)
                     // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (PermissionUtils.canDrawOverlay(this) && !PermissionUtils.isDeviceLocked(this)) {
+                        if (PermissionUtils.canDrawOverlay(appContext) && !PermissionUtils.isDeviceLocked(appContext)) {
                             // 设备未锁屏，直接显示悬浮窗
-                            StrongReminderOverlayService.startIfPossible(this, task, logId)
+                            StrongReminderOverlayService.startIfPossible(appContext, task, logId)
                         } else {
                             // 设备锁屏，保存待显示状态，等解锁后显示
                             PendingOverlayManager.savePending(
-                                this,
+                                appContext,
                                 task.taskId,
                                 task.event,
                                 task.description,
