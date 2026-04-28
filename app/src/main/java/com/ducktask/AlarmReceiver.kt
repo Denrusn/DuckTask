@@ -46,11 +46,9 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     ReminderScheduler(context.applicationContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(context, task, nextRunTime, logId)
+                    // STRONG 模式：仅通过悬浮窗提醒，不使用应用内弹窗
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        val shownByOverlay = StrongReminderOverlayService.startIfPossible(context, task, logId)
-                        if (!shownByOverlay) {
-                            StrongReminderActivityLauncher.launch(context, task, logId)
-                        }
+                        StrongReminderOverlayService.startIfPossible(context, task, logId)
                     }
                 } else {
                     dao.update(task.copy(status = TaskStatus.ALERTING))
@@ -64,11 +62,9 @@ class AlarmReceiver : BroadcastReceiver() {
                         )
                     )
                     DuckTaskNotifications.showReminder(context, task, null, logId)
+                    // STRONG 模式：仅通过悬浮窗提醒，不使用应用内弹窗
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        val shownByOverlay = StrongReminderOverlayService.startIfPossible(context, task, logId)
-                        if (!shownByOverlay) {
-                            StrongReminderActivityLauncher.launch(context, task, logId)
-                        }
+                        StrongReminderOverlayService.startIfPossible(context, task, logId)
                     }
                 }
             } catch (t: Throwable) {

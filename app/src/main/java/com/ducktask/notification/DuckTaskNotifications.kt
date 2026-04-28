@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.ducktask.app.MainActivity
 import com.ducktask.app.R
 import com.ducktask.app.ReminderActionReceiver
-import com.ducktask.app.StrongReminderActivity
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
 import com.ducktask.app.util.PermissionUtils
@@ -106,27 +105,6 @@ object DuckTaskNotifications {
             .putExtra(ReminderActionReceiver.EXTRA_LOG_ID, logId)
             .putExtra(ReminderActionReceiver.EXTRA_TASK_ID, taskId)
         return PendingIntent.getBroadcast(
-            context,
-            notificationId,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
-
-    private fun strongReminderIntent(
-        context: Context,
-        notificationId: Int,
-        logId: Long,
-        task: Task
-    ): PendingIntent {
-        val intent = Intent(context, StrongReminderActivity::class.java)
-            .putExtra(StrongReminderActivity.EXTRA_TASK_ID, task.taskId)
-            .putExtra(StrongReminderActivity.EXTRA_EVENT, task.event)
-            .putExtra(StrongReminderActivity.EXTRA_DESCRIPTION, task.description)
-            .putExtra(StrongReminderActivity.EXTRA_LOG_ID, logId)
-            .putExtra(StrongReminderActivity.EXTRA_NOTIFICATION_ID, notificationId)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        return PendingIntent.getActivity(
             context,
             notificationId,
             intent,

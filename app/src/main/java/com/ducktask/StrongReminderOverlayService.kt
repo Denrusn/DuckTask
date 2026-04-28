@@ -399,7 +399,7 @@ class StrongReminderOverlayService : Service() {
                 runCatching {
                     val db = AppDatabase.getInstance(applicationContext)
                     db.reminderLogDao()
-                        .acknowledge(logId, System.currentTimeMillis(), StrongReminderActivity.DISMISS_METHOD_POPUP)
+                        .acknowledge(logId, System.currentTimeMillis(), DISMISS_METHOD_OVERLAY)
                     if (currentTaskId.isNotBlank()) {
                         val task = db.taskDao().getTaskByTaskId(currentTaskId)
                         if (task?.status == TaskStatus.ALERTING) {
@@ -527,6 +527,7 @@ class StrongReminderOverlayService : Service() {
     }
 
     companion object {
+        const val DISMISS_METHOD_OVERLAY = "overlay"
         private const val HOLD_DURATION_MS = 3_000L
         private const val EXTRA_TASK_ID = "task_id"
         private const val EXTRA_EVENT = "event"
