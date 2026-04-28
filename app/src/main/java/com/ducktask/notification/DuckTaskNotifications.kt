@@ -93,8 +93,7 @@ object DuckTaskNotifications {
             )
         } else {
             // STRONG 模式：悬浮窗负责强提醒（见 AlarmReceiver）
-            // 通知点击时打开应用，用户可以看到任务列表
-            builder.setContentIntent(openAppIntent)
+            // 不设置 ContentIntent，让通知只作为视觉提示，不响应点击
         }
 
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
