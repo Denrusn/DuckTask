@@ -92,13 +92,9 @@ object DuckTaskNotifications {
                 acknowledgeIntent(context, notificationId, logId, task.taskId)
             )
         } else {
-            builder.setContentIntent(strongReminderIntent(context, notificationId, logId, task))
-            if (shouldUseFullScreenFallback(context)) {
-                builder.setFullScreenIntent(
-                    strongReminderIntent(context, notificationId, logId, task),
-                    canUseFullScreenIntent(context)
-                )
-            }
+            // STRONG 模式：悬浮窗负责强提醒（见 AlarmReceiver）
+            // 通知点击时打开应用，用户可以看到任务列表
+            builder.setContentIntent(openAppIntent)
         }
 
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
