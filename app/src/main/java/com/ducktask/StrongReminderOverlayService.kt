@@ -1,6 +1,7 @@
 package com.ducktask.app
 
-import android.animation.AccelerateInterpolator
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.animation.ObjectAnimator
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -130,7 +131,7 @@ class StrongReminderOverlayService : Service() {
         eventText = TextView(this).apply {
             text = event.ifBlank { "DuckTask 提醒" }
             setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.DEFAULT_BOLD)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             textSize = 32f
             gravity = Gravity.CENTER
         }
@@ -209,7 +210,7 @@ class StrongReminderOverlayService : Service() {
         buttonText = TextView(this).apply {
             text = "长按解锁"
             setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.DEFAULT_BOLD)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             textSize = 18f
             gravity = Gravity.CENTER
         }
@@ -345,7 +346,7 @@ class StrongReminderOverlayService : Service() {
                 .alpha(0f)
                 .scaleX(0.3f)
                 .scaleY(0.3f)
-                .setDuration(700)
+                .setDuration(700L)
                 .setInterpolator(AccelerateInterpolator())
                 .withEndAction {
                     root.removeView(particle)
@@ -368,7 +369,7 @@ class StrongReminderOverlayService : Service() {
                 setStroke(dp(3f), Color.parseColor("#80FF6B35"))
             }
         }
-        val size = dp(220f)
+        val size = dp(220)
         ripple.layoutParams = FrameLayout.LayoutParams(size, size)
         ripple.x = root.width / 2f - size / 2
         ripple.y = root.height / 2f - size / 2
