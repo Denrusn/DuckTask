@@ -1,17 +1,22 @@
 package com.ducktask.app
 
+import android.animation.AccelerateInterpolator
+import android.animation.ObjectAnimator
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.Typeface
+import android.graphics.Paint.Cap
+import android.graphics.Paint.Style
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.animation.ObjectAnimator
-import android.animation.PropertyValuesHolder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -19,11 +24,12 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -41,12 +47,17 @@ import kotlinx.coroutines.launch
 class StrongReminderOverlayService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var windowManager: WindowManager
+
+    // UI 组件
     private var overlayView: View? = null
-    private var progressBar: ProgressBar? = null
-    private var countdownText: TextView? = null
-    private var hintView: TextView? = null
-    private var holdButton: LinearLayout? = null
-    private var holdButtonText: TextView? = null
+    private var eventText: TextView? = null
+    private var glowView: View? = null
+    private var buttonContainer: FrameLayout? = null
+    private var ringView: RingProgressView? = null
+    private var buttonText: TextView? = null
+    private var particleViews = mutableListOf<View>()
+
+    // 状态
     private var holdRunnable: Runnable? = null
     private var dismissing = false
     private var currentTaskId: String = ""
@@ -97,172 +108,60 @@ class StrongReminderOverlayService : Service() {
     private fun showOverlay(event: String, description: String) {
         removeOverlay()
 
+        // 根布局 - 深色背景
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#B8140B06"))
+            setBackgroundColor(Color.parseColor("#E60D0D0D"))
             isClickable = true
             isFocusable = true
         }
 
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(28), dp(28), dp(28), dp(28))
+        // 发光背景
+        glowView = View(this).apply {
             background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(30).toFloat()
-                setColor(Color.parseColor("#FFF7F2"))
-                setStroke(dp(1), Color.parseColor("#33FF6B35"))
+                shape = GradientDrawable.OVAL
+                colors = intArrayOf(Color.parseColor("#26FF6B35"), Color.TRANSPARENT)
             }
-            elevation = dp(10).toFloat()
         }
-
-        // Header pill
-        card.addView(
-            pillText(
-                text = "强提醒进行中",
-                backgroundColor = Color.parseColor("#1FF44336"),
-                textColor = Color.parseColor("#FFF44336")
-            )
-        )
-
-        // Large countdown display
-        countdownText = TextView(this).apply {
-            text = "3"
-            setTextColor(Color.parseColor("#FFFF6B35"))
-            setTypeface(typeface, Typeface.BOLD)
-            textSize = 80f
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, dp(16), 0, dp(8))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(8)
-            }
-        }.also(card::addView)
-
-        // Event title
-        card.addView(
-            textView(
-                text = event,
-                textSizeSp = 26f,
-                textColor = Color.parseColor("#FF181310"),
-                isBold = true,
-                gravity = Gravity.CENTER_HORIZONTAL,
-                topMarginDp = 8
-            )
-        )
-
-        // Description if available
-        if (description.isNotBlank()) {
-            card.addView(
-                capsuleText(
-                    text = description,
-                    backgroundColor = Color.parseColor("#14FFD60A"),
-                    textColor = Color.parseColor("#FF2F251B"),
-                    topMarginDp = 16
-                )
-            )
-        }
-
-        // Instruction text
-        card.addView(
-            capsuleText(
-                text = "长按下方按钮 3 秒后才可解除，松手会重新计时。",
-                backgroundColor = Color.parseColor("#14FFB703"),
-                textColor = Color.parseColor("#FF5F3A0B"),
-                topMarginDp = 16
-            )
-        )
-
-        // Progress bar
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = HOLD_DURATION_MS.toInt()
-            progress = 0
-            progressDrawable.setTint(Color.parseColor("#FFFF6B35"))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(10)
-            ).apply {
-                topMargin = dp(16)
-            }
-        }.also(card::addView)
-
-        // Hint text
-        hintView = textView(
-            text = "长按 3 秒解除提醒",
-            textSizeSp = 18f,
-            textColor = Color.parseColor("#FF1E1712"),
-            isBold = true,
-            gravity = Gravity.CENTER_HORIZONTAL,
-            topMarginDp = 12
-        ).also(card::addView)
-
-        // Dismiss button with icon
-        holdButton = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        root.addView(glowView, FrameLayout.LayoutParams(dp(400), dp(400)).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(20).toFloat()
-                colors = intArrayOf(Color.parseColor("#FFFF6B35"), Color.parseColor("#FFFFA62B"))
-                orientation = GradientDrawable.Orientation.LEFT_RIGHT
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(16)
-            }
+        })
 
-            // Touch icon
-            addView(ImageView(context).apply {
-                setImageResource(android.R.drawable.ic_menu_compass)
-                setColorFilter(Color.WHITE)
-                val iconParams = LinearLayout.LayoutParams(dp(24), dp(24))
-                iconParams.marginEnd = dp(10)
-                layoutParams = iconParams
-            })
-
-            // Button text
-            holdButtonText = TextView(context).apply {
-                text = "按住解除"
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, Typeface.BOLD)
-                textSize = 17f
-            }
-            addView(holdButtonText)
-
-            setOnTouchListener(::handleHoldTouch)
+        // 事件名称
+        eventText = TextView(this).apply {
+            text = event.ifBlank { "DuckTask 提醒" }
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.DEFAULT_BOLD)
+            textSize = 32f
+            gravity = Gravity.CENTER
         }
-        card.addView(holdButton!!)
+        root.addView(eventText, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.CENTER
+            topMargin = -dp(180)
+        })
 
-        root.addView(
-            card,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER
-            ).apply {
-                leftMargin = dp(20)
-                rightMargin = dp(20)
-            }
-        )
+        // 环形按钮容器
+        buttonContainer = FrameLayout(this)
+        root.addView(buttonContainer, FrameLayout.LayoutParams(dp(220), dp(220)).apply {
+            gravity = Gravity.CENTER
+            topMargin = dp(60)
+        })
 
+        // 绑定窗口
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
+                @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             },
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-        }
+        ).apply { gravity = Gravity.CENTER }
 
         runCatching {
             windowManager.addView(root, params)
@@ -271,52 +170,95 @@ class StrongReminderOverlayService : Service() {
             AppLogger.error("StrongReminderOverlay", "Failed to add overlay view", it)
             stopSelf()
         }
+
+        // 创建环形按钮
+        createRingButton()
     }
 
-    private fun handleHoldTouch(view: View, event: MotionEvent): Boolean {
+    private fun createRingButton() {
+        val container = buttonContainer ?: return
+        container.removeAllViews()
+
+        // 环形进度视图
+        ringView = RingProgressView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        container.addView(ringView)
+
+        // 中心内容
+        val centerLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply { gravity = Gravity.CENTER }
+        }
+
+        // 图标
+        val iconView = ImageView(this).apply {
+            setImageResource(android.R.drawable.ic_menu_compass)
+            setColorFilter(Color.WHITE)
+        }
+        centerLayout.addView(iconView, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+        // 文字
+        buttonText = TextView(this).apply {
+            text = "长按解锁"
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.DEFAULT_BOLD)
+            textSize = 18f
+            gravity = Gravity.CENTER
+        }
+        centerLayout.addView(buttonText)
+        container.addView(centerLayout)
+
+        // 触摸监听
+        container.setOnTouchListener { _, event ->
+            handleButtonTouch(event)
+            true
+        }
+    }
+
+    private fun handleButtonTouch(event: MotionEvent) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> startHold()
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelHold()
         }
-        return true
     }
 
     private fun startHold() {
         dismissing = false
-        hintView?.text = "保持按住，3 秒后解除"
-        progressBar?.progress = 0
+        buttonText?.text = "保持"
+        ringView?.setProgress(0f)
+        ringView?.setColor(Color.parseColor("#FFFF6B35"))
         mainHandler.removeCallbacksAndMessages(null)
 
-        // Scale down animation for button press feedback
-        holdButton?.let { button ->
-            val scaleDown = ObjectAnimator.ofPropertyValuesHolder(
-                button,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 0.95f),
-                PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.95f)
-            ).apply {
-                duration = 150
-                repeatCount = 0
+        // 按钮缩放动画
+        buttonContainer?.let { container ->
+            ObjectAnimator.ofFloat(container, "scaleX", 1f, 0.94f).apply {
+                duration = 120
+                start()
             }
-            scaleDown.start()
+            ObjectAnimator.ofFloat(container, "scaleY", 1f, 0.94f).apply {
+                duration = 120
+                start()
+            }
         }
+
         val startedAt = SystemClock.elapsedRealtime()
         holdRunnable = object : Runnable {
             override fun run() {
                 val elapsed = (SystemClock.elapsedRealtime() - startedAt).coerceAtMost(HOLD_DURATION_MS)
-                progressBar?.progress = elapsed.toInt()
-                // Update countdown display (3, 2, 1)
-                val remaining = ((HOLD_DURATION_MS - elapsed) / 1000).toInt() + 1
-                countdownText?.text = when {
-                    remaining >= 3 -> "3"
-                    remaining >= 2 -> "2"
-                    remaining >= 1 -> "1"
-                    else -> "0"
-                }
+                val progress = elapsed / HOLD_DURATION_MS
+                ringView?.setProgress(progress)
+
                 if (elapsed >= HOLD_DURATION_MS) {
                     dismissing = true
-                    hintView?.text = "提醒已解除"
-                    countdownText?.text = "0"
-                    dismissReminder()
+                    onComplete()
                 } else {
                     mainHandler.postDelayed(this, 16)
                 }
@@ -328,23 +270,126 @@ class StrongReminderOverlayService : Service() {
     private fun cancelHold() {
         if (dismissing) return
         mainHandler.removeCallbacksAndMessages(null)
-        progressBar?.progress = 0
-        hintView?.text = "按住时间不足，请继续长按"
-        countdownText?.text = "3"
+        ringView?.setProgress(0f)
+        buttonText?.text = "长按解锁"
+
+        // 恢复按钮大小
+        buttonContainer?.let { container ->
+            ObjectAnimator.ofFloat(container, "scaleX", container.scaleX, 1f).apply {
+                duration = 120
+                start()
+            }
+            ObjectAnimator.ofFloat(container, "scaleY", container.scaleY, 1f).apply {
+                duration = 120
+                start()
+            }
+        }
+    }
+
+    private fun onComplete() {
+        // 变绿
+        ringView?.setColor(Color.parseColor("#FF4CAF50"))
+        buttonText?.text = "完成"
+
+        // 放大按钮
+        buttonContainer?.let { container ->
+            ObjectAnimator.ofFloat(container, "scaleX", 0.94f, 1.08f).apply {
+                duration = 200
+                start()
+            }
+            ObjectAnimator.ofFloat(container, "scaleY", 0.94f, 1.08f).apply {
+                duration = 200
+                start()
+            }
+        }
+
+        // 触发粒子效果
+        triggerParticleEffect()
+
+        // 延迟关闭
+        mainHandler.postDelayed({
+            dismissReminder()
+        }, 600)
+    }
+
+    private fun triggerParticleEffect() {
+        val root = overlayView ?: return
+        val centerX = root.width / 2f
+        val centerY = root.height / 2f
+        val particleCount = 16
+
+        for (i in 0 until particleCount) {
+            val angle = (i * 22.5f - 90f) * Math.PI / 180.0
+            val distance = (100 + Math.random() * 80).toFloat()
+            val size = (12 + Math.random() * 16).toFloat()
+
+            val particle = View(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#FF4CAF50"))
+                }
+            }
+            particle.layoutParams = FrameLayout.LayoutParams(size.toInt(), size.toInt())
+            particle.x = centerX - size / 2
+            particle.y = centerY - size / 2
+            root.addView(particle)
+            particleViews.add(particle)
+
+            // 动画
+            val targetX = centerX + (distance * Math.cos(angle)).toFloat() - size / 2
+            val targetY = centerY + (distance * Math.sin(angle)).toFloat() - size / 2
+
+            particle.animate()
+                .x(targetX)
+                .y(targetY)
+                .alpha(0f)
+                .scaleX(0.3f)
+                .scaleY(0.3f)
+                .setDuration(700)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction {
+                    root.removeView(particle)
+                    particleViews.remove(particle)
+                }
+                .start()
+        }
+
+        // 触发波纹效果
+        triggerRippleEffect()
+    }
+
+    private fun triggerRippleEffect() {
+        val root = overlayView ?: return
+
+        val ripple = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(3f), Color.parseColor("#80FF6B35"))
+            }
+        }
+        val size = dp(220f)
+        ripple.layoutParams = FrameLayout.LayoutParams(size, size)
+        ripple.x = root.width / 2f - size / 2
+        ripple.y = root.height / 2f - size / 2
+        root.addView(ripple)
+        particleViews.add(ripple)
+
+        ripple.animate()
+            .scaleX(3f)
+            .scaleY(3f)
+            .alpha(0f)
+            .setDuration(1000)
+            .setInterpolator(LinearInterpolator())
+            .withEndAction {
+                root.removeView(ripple)
+                particleViews.remove(ripple)
+            }
+            .start()
     }
 
     private fun dismissReminder() {
         mainHandler.removeCallbacksAndMessages(null)
-
-        // Change button to success green
-        holdButton?.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(20).toFloat()
-            colors = intArrayOf(Color.parseColor("#FF4CAF50"), Color.parseColor("#FF81C784"))
-            orientation = GradientDrawable.Orientation.LEFT_RIGHT
-        }
-        holdButtonText?.text = "已完成"
-        holdButtonText?.setTextColor(Color.WHITE)
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(currentNotificationId)
@@ -405,95 +450,81 @@ class StrongReminderOverlayService : Service() {
             runCatching { windowManager.removeView(view) }
         }
         overlayView = null
-        countdownText = null
-        progressBar = null
-        hintView = null
-        holdButton = null
-        holdButtonText = null
-    }
-
-    private fun pillText(
-        text: String,
-        backgroundColor: Int,
-        textColor: Int
-    ): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(textColor)
-            setTypeface(typeface, Typeface.BOLD)
-            textSize = 13f
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(999).toFloat()
-                setColor(backgroundColor)
-            }
+        particleViews.forEach { view ->
+            runCatching { (view.parent as? ViewGroup)?.removeView(view) }
         }
-    }
-
-    private fun capsuleText(
-        text: String,
-        backgroundColor: Int,
-        textColor: Int,
-        topMarginDp: Int
-    ): TextView {
-        return textView(
-            text = text,
-            textSizeSp = 15f,
-            textColor = textColor,
-            gravity = Gravity.CENTER_HORIZONTAL,
-            topMarginDp = topMarginDp,
-            horizontalPaddingDp = 16,
-            verticalPaddingDp = 14,
-            backgroundColor = backgroundColor,
-            cornerRadiusDp = 20
-        )
-    }
-
-    private fun textView(
-        text: String,
-        textSizeSp: Float,
-        textColor: Int,
-        isBold: Boolean = false,
-        gravity: Int = Gravity.START,
-        topMarginDp: Int = 0,
-        horizontalPaddingDp: Int = 0,
-        verticalPaddingDp: Int = 0,
-        backgroundColor: Int? = null,
-        cornerRadiusDp: Int = 0
-    ): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(textColor)
-            textSize = textSizeSp
-            this.gravity = gravity
-            if (isBold) setTypeface(typeface, Typeface.BOLD)
-            if (horizontalPaddingDp > 0 || verticalPaddingDp > 0) {
-                setPadding(
-                    dp(horizontalPaddingDp),
-                    dp(verticalPaddingDp),
-                    dp(horizontalPaddingDp),
-                    dp(verticalPaddingDp)
-                )
-            }
-            if (backgroundColor != null) {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(cornerRadiusDp).toFloat()
-                    setColor(backgroundColor)
-                }
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(topMarginDp)
-            }
-        }
+        particleViews.clear()
+        eventText = null
+        glowView = null
+        buttonContainer = null
+        ringView = null
+        buttonText = null
     }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
+
+    // 环形进度自定义视图
+    inner class RingProgressView(context: Context) : View(context) {
+        private var progress: Float = 0f
+        private var ringColor: Int = Color.parseColor("#FFFF6B35")
+
+        private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeWidth = dp(10f)
+            color = Color.argb(51, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
+            strokeCap = Cap.ROUND
+        }
+        private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeWidth = dp(10f)
+            color = ringColor
+            strokeCap = Cap.ROUND
+        }
+        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.FILL
+            color = Color.argb(38, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
+        }
+
+        fun setProgress(value: Float) {
+            progress = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+
+        fun setColor(color: Int) {
+            ringColor = color
+            progressPaint.color = color
+            backgroundPaint.color = Color.argb(51, Color.red(color), Color.green(color), Color.blue(color))
+            glowPaint.color = Color.argb(38, Color.red(color), Color.green(color), Color.blue(color))
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val centerX = width / 2f
+            val centerY = height / 2f
+            val radius = (minOf(width, height) - backgroundPaint.strokeWidth) / 2f
+
+            // 背景光晕
+            canvas.drawCircle(centerX, centerY, radius + dp(20f), glowPaint)
+
+            // 背景圆环
+            canvas.drawCircle(centerX, centerY, radius, backgroundPaint)
+
+            // 进度圆弧
+            val rect = RectF(
+                centerX - radius,
+                centerY - radius,
+                centerX + radius,
+                centerY + radius
+            )
+            canvas.drawArc(rect, -90f, 360f * progress, false, progressPaint)
+        }
+
+        private fun dp(value: Float): Float {
+            return value * resources.displayMetrics.density
+        }
+    }
 
     companion object {
         private const val HOLD_DURATION_MS = 3_000L
@@ -503,9 +534,24 @@ class StrongReminderOverlayService : Service() {
         private const val EXTRA_LOG_ID = "log_id"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
 
-        fun startIfPossible(context: android.content.Context, task: Task, logId: Long): Boolean {
-            // 始终返回 false，强制使用 StrongReminderActivity（全屏 Activity 有更好的 UI）
-            return false
+        fun startIfPossible(context: Context, task: Task, logId: Long): Boolean {
+            if (!PermissionUtils.canDrawOverlay(context) || PermissionUtils.isDeviceLocked(context)) {
+                return false
+            }
+            val notificationId = task.taskId.hashCode()
+            val intent = Intent(context, StrongReminderOverlayService::class.java)
+                .putExtra(EXTRA_TASK_ID, task.taskId)
+                .putExtra(EXTRA_EVENT, task.event)
+                .putExtra(EXTRA_DESCRIPTION, task.description)
+                .putExtra(EXTRA_LOG_ID, logId)
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            return runCatching {
+                DuckTaskNotifications.ensureChannel(context)
+                ContextCompat.startForegroundService(context, intent)
+                true
+            }.onFailure {
+                AppLogger.error("StrongReminderOverlay", "Failed to start overlay service", it)
+            }.getOrDefault(false)
         }
     }
 }
