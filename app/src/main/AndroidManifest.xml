@@ -39,14 +39,6 @@
             android:name=".ReminderActionReceiver"
             android:exported="false" />
 
-        <receiver
-            android:name=".OverlayUnlockReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
-
         <service
             android:name=".StrongReminderOverlayService"
             android:exported="false"

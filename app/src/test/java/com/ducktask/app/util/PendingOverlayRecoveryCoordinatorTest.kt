@@ -1,0 +1,117 @@
+package com.ducktask.app.util
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Test
+
+class PendingOverlayRecoveryCoordinatorTest {
+    private val pending = PendingOverlayManager.PendingOverlay(
+        taskId = "task-1",
+        event = "吃饭",
+        description = "测试提醒",
+        logId = 42L,
+        notificationId = 7
+    )
+
+    @Test
+    fun startsAndClearsPendingOverlayWhenDeviceIsUnlocked() {
+        val store = FakePendingOverlayStore(pending)
+        var startedWith: PendingOverlayManager.PendingOverlay? = null
+        val coordinator = PendingOverlayRecoveryCoordinator(
+            pendingStore = store,
+            isDeviceLocked = { false },
+            overlayStarter = {
+                startedWith = it
+                true
+            }
+        )
+
+        val result = coordinator.recoverPendingOverlay()
+
+        assertEquals(PendingOverlayRecoveryCoordinator.RecoveryStatus.STARTED, result.status)
+        assertSame(pending, result.pending)
+        assertSame(pending, startedWith)
+        assertEquals("task-1" to 42L, store.clearedMatch)
+        assertNull(store.pending)
+    }
+
+    @Test
+    fun keepsPendingOverlayWhenDeviceIsStillLocked() {
+        val store = FakePendingOverlayStore(pending)
+        var starterCalled = false
+        val coordinator = PendingOverlayRecoveryCoordinator(
+            pendingStore = store,
+            isDeviceLocked = { true },
+            overlayStarter = {
+                starterCalled = true
+                true
+            }
+        )
+
+        val result = coordinator.recoverPendingOverlay()
+
+        assertEquals(PendingOverlayRecoveryCoordinator.RecoveryStatus.DEVICE_LOCKED, result.status)
+        assertSame(pending, result.pending)
+        assertFalse(starterCalled)
+        assertNull(store.clearedMatch)
+        assertSame(pending, store.pending)
+    }
+
+    @Test
+    fun keepsPendingOverlayWhenServiceStartFails() {
+        val store = FakePendingOverlayStore(pending)
+        val coordinator = PendingOverlayRecoveryCoordinator(
+            pendingStore = store,
+            isDeviceLocked = { false },
+            overlayStarter = { false }
+        )
+
+        val result = coordinator.recoverPendingOverlay()
+
+        assertEquals(PendingOverlayRecoveryCoordinator.RecoveryStatus.START_FAILED, result.status)
+        assertSame(pending, result.pending)
+        assertNull(store.clearedMatch)
+        assertSame(pending, store.pending)
+    }
+
+    @Test
+    fun doesNothingWhenNoPendingOverlayExists() {
+        val store = FakePendingOverlayStore()
+        var starterCalled = false
+        val coordinator = PendingOverlayRecoveryCoordinator(
+            pendingStore = store,
+            isDeviceLocked = { false },
+            overlayStarter = {
+                starterCalled = true
+                true
+            }
+        )
+
+        val result = coordinator.recoverPendingOverlay()
+
+        assertEquals(PendingOverlayRecoveryCoordinator.RecoveryStatus.NO_PENDING, result.status)
+        assertNull(result.pending)
+        assertFalse(starterCalled)
+        assertNull(store.clearedMatch)
+        assertNull(store.pending)
+    }
+
+    private class FakePendingOverlayStore(
+        initialPending: PendingOverlayManager.PendingOverlay? = null
+    ) : PendingOverlayRecoveryCoordinator.PendingOverlayStore {
+        var pending: PendingOverlayManager.PendingOverlay? = initialPending
+        var clearedMatch: Pair<String, Long>? = null
+
+        override fun getPending(): PendingOverlayManager.PendingOverlay? = pending
+
+        override fun clearPendingIfMatches(taskId: String, logId: Long): Boolean {
+            val current = pending ?: return false
+            if (current.taskId != taskId || current.logId != logId) return false
+            pending = null
+            clearedMatch = taskId to logId
+            return true
+        }
+    }
+}

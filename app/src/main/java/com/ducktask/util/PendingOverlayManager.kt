@@ -1,12 +1,11 @@
 package com.ducktask.app.util
 
 import android.content.Context
-import android.content.SharedPreferences
 
 /**
  * 管理待显示的强提醒悬浮窗
  * 当设备锁屏时，闹钟触发后提醒会存入这里
- * 解锁后，OverlayUnlockReceiver 会读取并显示
+ * 解锁后，DeviceUnlockReceiver 会读取并显示
  */
 object PendingOverlayManager {
     private const val PREFS_NAME = "pending_overlay"
@@ -49,6 +48,15 @@ object PendingOverlayManager {
             .edit()
             .clear()
             .apply()
+    }
+
+    fun clearPendingIfMatches(context: Context, taskId: String, logId: Long): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val currentTaskId = prefs.getString(KEY_TASK_ID, null) ?: return false
+        val currentLogId = prefs.getLong(KEY_LOG_ID, -1L)
+        if (currentTaskId != taskId || currentLogId != logId) return false
+        prefs.edit().clear().apply()
+        return true
     }
 
     data class PendingOverlay(

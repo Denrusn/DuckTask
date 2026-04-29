@@ -168,8 +168,10 @@ class StrongReminderOverlayService : Service() {
             windowManager.addView(root, params)
             overlayView = root
 
-            // 如果有待显示状态，清除它
-            PendingOverlayManager.clearPending(this)
+            val cleared = PendingOverlayManager.clearPendingIfMatches(this, currentTaskId, currentLogId)
+            if (cleared) {
+                AppLogger.info("StrongReminderOverlay", "Cleared matching pending overlay for: $event")
+            }
         }.onFailure {
             AppLogger.error("StrongReminderOverlay", "Failed to add overlay view", it)
             stopSelf()

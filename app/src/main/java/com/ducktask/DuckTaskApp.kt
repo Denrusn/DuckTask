@@ -8,6 +8,7 @@ import com.ducktask.app.data.repository.TaskRepository
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
 import com.ducktask.app.util.AppLogger
+import com.ducktask.app.util.PendingOverlayRecovery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,7 @@ class DuckTaskApp : Application() {
         deviceUnlockReceiver = DeviceUnlockReceiver()
         val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
         registerReceiver(deviceUnlockReceiver, filter)
+        PendingOverlayRecovery.recoverIfPossible(this, "app_start")
     }
 
     override fun onTerminate() {
