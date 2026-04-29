@@ -1197,16 +1197,14 @@ class StrongReminderOverlayService : Service() {
             isFakeBoldText = true
             color = Color.WHITE
         }
-        private data class ClusterGeometry(
-            val centerX: Float,
-            val centerY: Float,
-            val ringRadius: Float,
-            val labelLeft: Float,
-            val labelTop: Float,
-            val labelRight: Float,
-            val labelBottom: Float,
-            val effectsClipBottom: Float
-        )
+        private var geometryCenterX: Float = 0f
+        private var geometryCenterY: Float = 0f
+        private var geometryRingRadius: Float = 0f
+        private var geometryLabelLeft: Float = 0f
+        private var geometryLabelTop: Float = 0f
+        private var geometryLabelRight: Float = 0f
+        private var geometryLabelBottom: Float = 0f
+        private var geometryEffectsClipBottom: Float = 0f
 
         override fun hasOverlappingRendering(): Boolean = false
 
@@ -1247,7 +1245,7 @@ class StrongReminderOverlayService : Service() {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val geometry = computeGeometry(width.toFloat(), height.toFloat())
+            computeGeometry(width.toFloat(), height.toFloat())
             val statePulse = when (holdState) {
                 HoldState.IDLE -> ambientPulse
                 HoldState.CHARGING -> progress
@@ -1257,21 +1255,21 @@ class StrongReminderOverlayService : Service() {
 
             configurePaints()
             val effectsCheckpoint = canvas.save()
-            canvas.clipRect(0f, 0f, width.toFloat(), geometry.effectsClipBottom)
-            drawHalo(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius, statePulse)
-            drawEnergySlices(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawRing(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawTickMarks(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawEnergySpokes(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawOrbitSparks(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawCoreGlyph(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawCrossFlare(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
-            drawBurst(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            canvas.clipRect(0f, 0f, width.toFloat(), geometryEffectsClipBottom)
+            drawHalo(canvas, geometryCenterX, geometryCenterY, geometryRingRadius, statePulse)
+            drawEnergySlices(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawRing(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawTickMarks(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawEnergySpokes(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawOrbitSparks(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawCoreGlyph(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawCrossFlare(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
+            drawBurst(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
             canvas.restoreToCount(effectsCheckpoint)
-            drawLabel(canvas, geometry)
+            drawLabel(canvas)
         }
 
-        private fun computeGeometry(viewWidth: Float, viewHeight: Float): ClusterGeometry {
+        private fun computeGeometry(viewWidth: Float, viewHeight: Float) {
             val centerX = viewWidth / 2f
             val ringRadius = minOf(viewWidth, viewHeight) * 0.275f
             val baseCenterY = viewHeight * 0.38f
@@ -1296,17 +1294,14 @@ class StrongReminderOverlayService : Service() {
 
             val labelTop = centerY + ringRadius + bottomEffectExpansion + labelGap
             val labelBottom = labelTop + labelHeight
-            val effectsClipBottom = (labelTop - dp(8f)).coerceIn(0f, viewHeight)
-            return ClusterGeometry(
-                centerX = centerX,
-                centerY = centerY,
-                ringRadius = ringRadius,
-                labelLeft = centerX - labelHalfWidth,
-                labelTop = labelTop,
-                labelRight = centerX + labelHalfWidth,
-                labelBottom = labelBottom,
-                effectsClipBottom = effectsClipBottom
-            )
+            geometryCenterX = centerX
+            geometryCenterY = centerY
+            geometryRingRadius = ringRadius
+            geometryLabelLeft = centerX - labelHalfWidth
+            geometryLabelTop = labelTop
+            geometryLabelRight = centerX + labelHalfWidth
+            geometryLabelBottom = labelBottom
+            geometryEffectsClipBottom = (labelTop - dp(8f)).coerceIn(0f, viewHeight)
         }
 
         private fun configurePaints() {
@@ -1656,7 +1651,7 @@ class StrongReminderOverlayService : Service() {
             }
         }
 
-        private fun drawLabel(canvas: Canvas, geometry: ClusterGeometry) {
+        private fun drawLabel(canvas: Canvas) {
             val label = when (holdState) {
                 HoldState.IDLE -> "长按确认"
                 HoldState.CHARGING -> "保持按住"
@@ -1672,10 +1667,10 @@ class StrongReminderOverlayService : Service() {
             if (labelVisibility <= 0f) return
 
             labelRect.set(
-                geometry.labelLeft,
-                geometry.labelTop,
-                geometry.labelRight,
-                geometry.labelBottom
+                geometryLabelLeft,
+                geometryLabelTop,
+                geometryLabelRight,
+                geometryLabelBottom
             )
             val basePillAlpha = when (holdState) {
                 HoldState.IDLE -> (24 + ambientPulse * 18).toInt()
@@ -1720,7 +1715,7 @@ class StrongReminderOverlayService : Service() {
                 }
             )
             val baseline = labelRect.centerY() - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
-            canvas.drawText(label, geometry.centerX, baseline, textPaint)
+            canvas.drawText(label, geometryCenterX, baseline, textPaint)
         }
 
         private fun dp(value: Float): Float {
