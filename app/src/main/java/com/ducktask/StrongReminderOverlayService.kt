@@ -65,11 +65,15 @@ class StrongReminderOverlayService : Service() {
     private var overlayView: FrameLayout? = null
     private var eventText: TextView? = null
     private var statusText: TextView? = null
+    private var backdropTintView: View? = null
     private var glowView: View? = null
     private var leftBeamView: View? = null
     private var rightBeamView: View? = null
+    private var topBeamView: View? = null
+    private var bottomBeamView: View? = null
     private var flashView: View? = null
     private var buttonContainer: FrameLayout? = null
+    private var buttonCenterLayout: LinearLayout? = null
     private var ringView: RingProgressView? = null
     private var buttonGlyph: BeaconGlyphView? = null
     private var buttonText: TextView? = null
@@ -175,7 +179,21 @@ class StrongReminderOverlayService : Service() {
             setBackgroundColor(Color.parseColor("#E60D0D0D"))
             isClickable = true
             isFocusable = true
+            clipChildren = false
+            clipToPadding = false
         }
+
+        backdropTintView = View(this).apply {
+            setBackgroundColor(Color.parseColor("#FF8C42"))
+            alpha = 0f
+        }
+        root.addView(
+            backdropTintView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
 
         glowView = View(this).apply {
             background = GradientDrawable().apply {
@@ -220,6 +238,38 @@ class StrongReminderOverlayService : Service() {
             gravity = Gravity.END
         })
 
+        topBeamView = View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    Color.TRANSPARENT,
+                    Color.parseColor("#24FF9F43"),
+                    Color.parseColor("#7AFFC857"),
+                    Color.TRANSPARENT
+                )
+            )
+            alpha = 0.14f
+        }
+        root.addView(topBeamView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(120)).apply {
+            gravity = Gravity.TOP
+        })
+
+        bottomBeamView = View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(
+                    Color.TRANSPARENT,
+                    Color.parseColor("#24FF9F43"),
+                    Color.parseColor("#7AFFC857"),
+                    Color.TRANSPARENT
+                )
+            )
+            alpha = 0.14f
+        }
+        root.addView(bottomBeamView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(120)).apply {
+            gravity = Gravity.BOTTOM
+        })
+
         eventText = TextView(this).apply {
             text = event.ifBlank { "DuckTask 提醒" }
             setTextColor(Color.WHITE)
@@ -245,7 +295,9 @@ class StrongReminderOverlayService : Service() {
             gravity = Gravity.CENTER
             letterSpacing = 0.16f
             alpha = 0.92f
-            setShadowLayer(dp(10).toFloat(), 0f, 0f, Color.parseColor("#44FFC857"))
+            includeFontPadding = false
+            setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         }
         root.addView(statusText, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -255,7 +307,12 @@ class StrongReminderOverlayService : Service() {
             topMargin = -dp(126)
         })
 
-        buttonContainer = FrameLayout(this)
+        buttonContainer = NonOverlappingFrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        }
         root.addView(buttonContainer, FrameLayout.LayoutParams(dp(240), dp(240)).apply {
             gravity = Gravity.CENTER
             topMargin = dp(60)
@@ -378,27 +435,37 @@ class StrongReminderOverlayService : Service() {
     private fun createRingButton() {
         val container = buttonContainer ?: return
         container.removeAllViews()
+        buttonCenterLayout = null
 
         ringView = RingProgressView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
+            setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         }
         container.addView(ringView)
 
-        val centerLayout = LinearLayout(this).apply {
+        val centerLayout = NonOverlappingLinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply { gravity = Gravity.CENTER }
         }
+        buttonCenterLayout = centerLayout
 
         buttonGlyph = BeaconGlyphView(this).apply {
             alpha = 0.95f
             setAccentColor(accentColor)
+            setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         }
         centerLayout.addView(buttonGlyph, LinearLayout.LayoutParams(dp(74), dp(74)).apply {
             bottomMargin = dp(4)
@@ -411,7 +478,9 @@ class StrongReminderOverlayService : Service() {
             textSize = 18f
             gravity = Gravity.CENTER
             letterSpacing = 0.06f
-            setShadowLayer(dp(10).toFloat(), 0f, 0f, Color.parseColor("#66FFFFFF"))
+            includeFontPadding = false
+            setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         }
         centerLayout.addView(buttonText)
         container.addView(centerLayout)
@@ -566,7 +635,13 @@ class StrongReminderOverlayService : Service() {
     }
 
     private fun animateButtonScale(targetScale: Float, durationMs: Long) {
-        buttonContainer?.animate()
+        ringView?.animate()
+            ?.scaleX(targetScale)
+            ?.scaleY(targetScale)
+            ?.setDuration(durationMs)
+            ?.setInterpolator(DecelerateInterpolator())
+            ?.start()
+        buttonCenterLayout?.animate()
             ?.scaleX(targetScale)
             ?.scaleY(targetScale)
             ?.setDuration(durationMs)
@@ -576,6 +651,7 @@ class StrongReminderOverlayService : Service() {
 
     private fun applyIdleVisuals() {
         val pulse = ambientPulse
+        backdropTintView?.alpha = 0.02f + pulse * 0.02f
         glowView?.apply {
             scaleX = 1f + pulse * 0.08f
             scaleY = 1f + pulse * 0.08f
@@ -590,6 +666,16 @@ class StrongReminderOverlayService : Service() {
             alpha = 0.12f + pulse * 0.08f
             scaleX = 1f + pulse * 0.08f
             translationX = dp(8).toFloat() - pulse * dp(4).toFloat()
+        }
+        topBeamView?.apply {
+            alpha = 0.08f + pulse * 0.06f
+            scaleY = 1f + pulse * 0.12f
+            translationY = -dp(6).toFloat() + pulse * dp(4).toFloat()
+        }
+        bottomBeamView?.apply {
+            alpha = 0.08f + pulse * 0.06f
+            scaleY = 1f + pulse * 0.12f
+            translationY = dp(6).toFloat() - pulse * dp(4).toFloat()
         }
         eventText?.apply {
             scaleX = 1f + pulse * 0.01f
@@ -614,6 +700,7 @@ class StrongReminderOverlayService : Service() {
 
     private fun applyChargingVisuals(progress: Float) {
         val pulse = ambientPulse
+        backdropTintView?.alpha = 0.05f + progress * 0.09f + pulse * 0.02f
         glowView?.apply {
             scaleX = 1.04f + progress * 0.34f + pulse * 0.08f
             scaleY = 1.04f + progress * 0.34f + pulse * 0.08f
@@ -628,6 +715,16 @@ class StrongReminderOverlayService : Service() {
             alpha = 0.18f + progress * 0.26f + pulse * 0.05f
             scaleX = 1.02f + progress * 0.28f
             translationX = dp(4).toFloat() - progress * dp(10).toFloat()
+        }
+        topBeamView?.apply {
+            alpha = 0.12f + progress * 0.18f + pulse * 0.04f
+            scaleY = 1.04f + progress * 0.32f
+            translationY = -dp(4).toFloat() + progress * dp(10).toFloat()
+        }
+        bottomBeamView?.apply {
+            alpha = 0.12f + progress * 0.18f + pulse * 0.04f
+            scaleY = 1.04f + progress * 0.32f
+            translationY = dp(4).toFloat() - progress * dp(10).toFloat()
         }
         eventText?.apply {
             scaleX = 1f + progress * 0.045f
@@ -654,6 +751,7 @@ class StrongReminderOverlayService : Service() {
         chargedPulse = pulse
         ringView?.setChargedPulse(pulse)
         buttonGlyph?.setChargedPulse(pulse)
+        backdropTintView?.alpha = 0.14f + pulse * 0.08f
         glowView?.apply {
             scaleX = 1.34f + pulse * 0.16f
             scaleY = 1.34f + pulse * 0.16f
@@ -668,6 +766,16 @@ class StrongReminderOverlayService : Service() {
             alpha = 0.48f + pulse * 0.22f
             scaleX = 1.34f + pulse * 0.24f
             translationX = -dp(10).toFloat() - pulse * dp(8).toFloat()
+        }
+        topBeamView?.apply {
+            alpha = 0.24f + pulse * 0.18f
+            scaleY = 1.3f + pulse * 0.28f
+            translationY = dp(8).toFloat() + pulse * dp(10).toFloat()
+        }
+        bottomBeamView?.apply {
+            alpha = 0.24f + pulse * 0.18f
+            scaleY = 1.3f + pulse * 0.28f
+            translationY = -dp(8).toFloat() - pulse * dp(10).toFloat()
         }
         eventText?.apply {
             scaleX = 1.05f + pulse * 0.02f
@@ -691,6 +799,7 @@ class StrongReminderOverlayService : Service() {
     private fun applyCompletionVisuals(progress: Float) {
         ringView?.setChargedPulse(1f - progress * 0.45f)
         buttonGlyph?.setCompletionProgress(progress)
+        backdropTintView?.alpha = 0.26f - progress * 0.16f
         glowView?.apply {
             scaleX = 1.46f + progress * 0.48f
             scaleY = 1.46f + progress * 0.48f
@@ -705,6 +814,16 @@ class StrongReminderOverlayService : Service() {
             alpha = 0.72f - progress * 0.58f
             scaleX = 1.56f + progress * 0.34f
             translationX = -dp(18).toFloat() - progress * dp(24).toFloat()
+        }
+        topBeamView?.apply {
+            alpha = 0.58f - progress * 0.44f
+            scaleY = 1.48f + progress * 0.34f
+            translationY = dp(14).toFloat() + progress * dp(20).toFloat()
+        }
+        bottomBeamView?.apply {
+            alpha = 0.58f - progress * 0.44f
+            scaleY = 1.48f + progress * 0.34f
+            translationY = -dp(14).toFloat() - progress * dp(20).toFloat()
         }
         eventText?.apply {
             scaleX = 1.07f + progress * 0.06f
@@ -990,11 +1109,15 @@ class StrongReminderOverlayService : Service() {
         particleViews.clear()
         eventText = null
         statusText = null
+        backdropTintView = null
         glowView = null
         leftBeamView = null
         rightBeamView = null
+        topBeamView = null
+        bottomBeamView = null
         flashView = null
         buttonContainer = null
+        buttonCenterLayout = null
         ringView = null
         buttonGlyph = null
         buttonText = null
@@ -1007,6 +1130,14 @@ class StrongReminderOverlayService : Service() {
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
+
+    private class NonOverlappingFrameLayout(context: Context) : FrameLayout(context) {
+        override fun hasOverlappingRendering(): Boolean = false
+    }
+
+    private class NonOverlappingLinearLayout(context: Context) : LinearLayout(context) {
+        override fun hasOverlappingRendering(): Boolean = false
+    }
 
     inner class BeaconGlyphView(context: Context) : View(context) {
         private var glyphColor: Int = accentColor
