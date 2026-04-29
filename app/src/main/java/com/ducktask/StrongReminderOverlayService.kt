@@ -28,7 +28,6 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.text.TextPaint
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -286,23 +285,22 @@ class StrongReminderOverlayService : Service() {
         })
 
         statusText = TextView(this).apply {
-            text = "长按完成提醒"
+            text = "长按确认"
             setTextColor(Color.parseColor("#F6FFD7B0"))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textSize = 14f
+            textSize = 15f
             gravity = Gravity.CENTER
-            letterSpacing = 0.16f
-            alpha = 0.92f
+            letterSpacing = 0.06f
+            alpha = 0.95f
             includeFontPadding = false
-            setBackgroundColor(Color.TRANSPARENT)
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            setShadowLayer(dp(10).toFloat(), 0f, 0f, Color.parseColor("#5535180A"))
         }
         root.addView(statusText, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.CENTER
-            topMargin = -dp(126)
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(66)
         })
 
         actionClusterView = OverlayActionClusterView(this).apply {
@@ -500,7 +498,7 @@ class StrongReminderOverlayService : Service() {
         currentMilestone = 0
         chargedPulse = 0f
         completionProgress = 0f
-        updateStatusText("长按完成提醒", Color.parseColor("#F6FFD7B0"))
+        updateStatusText("长按确认", Color.parseColor("#F6FFD7B0"))
         applyActionClusterBase(accentColor)
         actionClusterView?.setChargedPulse(0f)
         actionClusterView?.setCompletionProgress(0f)
@@ -1144,7 +1142,6 @@ class StrongReminderOverlayService : Service() {
         private val sliceRect = RectF()
         private val innerArcRect = RectF()
         private val outerArcRect = RectF()
-        private val labelRect = RectF()
 
         private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
         private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1190,21 +1187,6 @@ class StrongReminderOverlayService : Service() {
             style = Style.STROKE
             strokeCap = Cap.ROUND
         }
-        private val labelFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
-        private val labelStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.STROKE }
-        private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            textAlign = Paint.Align.CENTER
-            isFakeBoldText = true
-            color = Color.WHITE
-        }
-        private var geometryCenterX: Float = 0f
-        private var geometryCenterY: Float = 0f
-        private var geometryRingRadius: Float = 0f
-        private var geometryLabelLeft: Float = 0f
-        private var geometryLabelTop: Float = 0f
-        private var geometryLabelRight: Float = 0f
-        private var geometryLabelBottom: Float = 0f
-        private var geometryEffectsClipBottom: Float = 0f
 
         override fun hasOverlappingRendering(): Boolean = false
 
@@ -1245,7 +1227,9 @@ class StrongReminderOverlayService : Service() {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            computeGeometry(width.toFloat(), height.toFloat())
+            val centerX = width / 2f
+            val centerY = height * 0.42f
+            val ringRadius = minOf(width, height) * 0.315f
             val statePulse = when (holdState) {
                 HoldState.IDLE -> ambientPulse
                 HoldState.CHARGING -> progress
@@ -1254,54 +1238,15 @@ class StrongReminderOverlayService : Service() {
             }
 
             configurePaints()
-            val effectsCheckpoint = canvas.save()
-            canvas.clipRect(0f, 0f, width.toFloat(), geometryEffectsClipBottom)
-            drawHalo(canvas, geometryCenterX, geometryCenterY, geometryRingRadius, statePulse)
-            drawEnergySlices(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawRing(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawTickMarks(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawEnergySpokes(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawOrbitSparks(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawCoreGlyph(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawCrossFlare(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            drawBurst(canvas, geometryCenterX, geometryCenterY, geometryRingRadius)
-            canvas.restoreToCount(effectsCheckpoint)
-            drawLabel(canvas)
-        }
-
-        private fun computeGeometry(viewWidth: Float, viewHeight: Float) {
-            val centerX = viewWidth / 2f
-            val ringRadius = minOf(viewWidth, viewHeight) * 0.275f
-            val baseCenterY = viewHeight * 0.38f
-            val labelHeight = dp(32f)
-            val labelGap = dp(18f)
-            val bottomSafeInset = dp(12f)
-            val labelHalfWidth = dp(84f)
-            val bottomEffectExpansion = when (holdState) {
-                HoldState.IDLE -> dp(12f)
-                HoldState.CHARGING -> dp(18f + progress * 10f)
-                HoldState.CHARGED_WAITING_RELEASE -> dp(24f + chargedPulse * 12f)
-                HoldState.COMPLETING -> dp(12f + (1f - completionProgress) * 8f)
-            }
-
-            var centerY = baseCenterY
-            val labelBottomIfUnshifted = centerY + ringRadius + bottomEffectExpansion + labelGap + labelHeight
-            val bottomLimit = viewHeight - bottomSafeInset
-            val overflow = labelBottomIfUnshifted - bottomLimit
-            if (overflow > 0f) {
-                centerY -= overflow
-            }
-
-            val labelTop = centerY + ringRadius + bottomEffectExpansion + labelGap
-            val labelBottom = labelTop + labelHeight
-            geometryCenterX = centerX
-            geometryCenterY = centerY
-            geometryRingRadius = ringRadius
-            geometryLabelLeft = centerX - labelHalfWidth
-            geometryLabelTop = labelTop
-            geometryLabelRight = centerX + labelHalfWidth
-            geometryLabelBottom = labelBottom
-            geometryEffectsClipBottom = (labelTop - dp(8f)).coerceIn(0f, viewHeight)
+            drawHalo(canvas, centerX, centerY, ringRadius, statePulse)
+            drawEnergySlices(canvas, centerX, centerY, ringRadius)
+            drawRing(canvas, centerX, centerY, ringRadius)
+            drawTickMarks(canvas, centerX, centerY, ringRadius)
+            drawEnergySpokes(canvas, centerX, centerY, ringRadius)
+            drawOrbitSparks(canvas, centerX, centerY, ringRadius)
+            drawCoreGlyph(canvas, centerX, centerY, ringRadius)
+            drawCrossFlare(canvas, centerX, centerY, ringRadius)
+            drawBurst(canvas, centerX, centerY, ringRadius)
         }
 
         private fun configurePaints() {
@@ -1326,8 +1271,6 @@ class StrongReminderOverlayService : Service() {
             burstPaint.color = Color.WHITE
             flarePaint.strokeWidth = dp(2.6f)
             flarePaint.color = Color.WHITE
-            labelStrokePaint.strokeWidth = dp(1.4f)
-            labelStrokePaint.color = Color.argb(88, 255, 255, 255)
         }
 
         private fun drawHalo(canvas: Canvas, centerX: Float, centerY: Float, radius: Float, statePulse: Float) {
@@ -1649,73 +1592,6 @@ class StrongReminderOverlayService : Service() {
                 val endY = centerY + sin(angle).toFloat() * outer
                 canvas.drawLine(startX, startY, endX, endY, flarePaint)
             }
-        }
-
-        private fun drawLabel(canvas: Canvas) {
-            val label = when (holdState) {
-                HoldState.IDLE -> "长按确认"
-                HoldState.CHARGING -> "保持按住"
-                HoldState.CHARGED_WAITING_RELEASE -> "松手确认"
-                HoldState.COMPLETING -> "已完成"
-            }
-            val labelVisibility = when {
-                holdState != HoldState.COMPLETING -> 1f
-                completionProgress <= 0.30f -> 1f
-                completionProgress >= 0.75f -> 0f
-                else -> 1f - ((completionProgress - 0.30f) / 0.45f)
-            }.coerceIn(0f, 1f)
-            if (labelVisibility <= 0f) return
-
-            labelRect.set(
-                geometryLabelLeft,
-                geometryLabelTop,
-                geometryLabelRight,
-                geometryLabelBottom
-            )
-            val basePillAlpha = when (holdState) {
-                HoldState.IDLE -> (24 + ambientPulse * 18).toInt()
-                HoldState.CHARGING -> (54 + progress * 44).toInt()
-                HoldState.CHARGED_WAITING_RELEASE -> (110 + chargedPulse * 70).toInt()
-                HoldState.COMPLETING -> (170 - completionProgress * 90).toInt()
-            }.coerceIn(18, 200)
-            val pillAlpha = (basePillAlpha * labelVisibility).toInt().coerceIn(0, 200)
-            labelStrokePaint.color = Color.argb(
-                (88f * labelVisibility).toInt().coerceIn(0, 120),
-                255,
-                255,
-                255
-            )
-            labelFillPaint.color = Color.argb(
-                pillAlpha,
-                Color.red(accentColor),
-                Color.green(accentColor),
-                Color.blue(accentColor)
-            )
-            canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelFillPaint)
-            canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelStrokePaint)
-
-            val baseTextAlpha = when (holdState) {
-                HoldState.IDLE -> 228
-                HoldState.CHARGING -> 238
-                HoldState.CHARGED_WAITING_RELEASE -> 255
-                HoldState.COMPLETING -> (255 - completionProgress * 70).toInt()
-            }.coerceIn(180, 255)
-            textPaint.color = Color.argb(
-                (baseTextAlpha * labelVisibility).toInt().coerceIn(0, 255),
-                255,
-                255,
-                255
-            )
-            textPaint.textSize = dp(
-                when (holdState) {
-                    HoldState.IDLE -> 16f + ambientPulse * 0.4f
-                    HoldState.CHARGING -> 16.4f + progress * 1.2f
-                    HoldState.CHARGED_WAITING_RELEASE -> 17.2f + chargedPulse * 1.3f
-                    HoldState.COMPLETING -> 17.8f + (1f - completionProgress) * 1.4f
-                }
-            )
-            val baseline = labelRect.centerY() - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
-            canvas.drawText(label, geometryCenterX, baseline, textPaint)
         }
 
         private fun dp(value: Float): Float {
