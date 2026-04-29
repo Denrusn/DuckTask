@@ -7,7 +7,7 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 
 class PendingOverlayRecoveryCoordinatorTest {
-    private val pending = PendingOverlayManager.PendingOverlay(
+    private val pending = PendingOverlayPayload(
         taskId = "task-1",
         event = "吃饭",
         description = "测试提醒",
@@ -18,7 +18,7 @@ class PendingOverlayRecoveryCoordinatorTest {
     @Test
     fun startsAndClearsPendingOverlayWhenDeviceIsUnlocked() {
         val store = FakePendingOverlayStore(pending)
-        var startedWith: PendingOverlayManager.PendingOverlay? = null
+        var startedWith: PendingOverlayPayload? = null
         val coordinator = PendingOverlayRecoveryCoordinator(
             pendingStore = store,
             isDeviceLocked = { false },
@@ -99,12 +99,12 @@ class PendingOverlayRecoveryCoordinatorTest {
     }
 
     private class FakePendingOverlayStore(
-        initialPending: PendingOverlayManager.PendingOverlay? = null
+        initialPending: PendingOverlayPayload? = null
     ) : PendingOverlayRecoveryCoordinator.PendingOverlayStore {
-        var pending: PendingOverlayManager.PendingOverlay? = initialPending
+        var pending: PendingOverlayPayload? = initialPending
         var clearedMatch: Pair<String, Long>? = null
 
-        override fun getPending(): PendingOverlayManager.PendingOverlay? = pending
+        override fun getPending(): PendingOverlayPayload? = pending
 
         override fun clearPendingIfMatches(taskId: String, logId: Long): Boolean {
             val current = pending ?: return false

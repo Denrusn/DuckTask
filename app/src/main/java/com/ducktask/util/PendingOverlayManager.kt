@@ -31,10 +31,10 @@ object PendingOverlayManager {
             .contains(KEY_TASK_ID)
     }
 
-    fun getPending(context: Context): PendingOverlay? {
+    fun getPending(context: Context): PendingOverlayPayload? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val taskId = prefs.getString(KEY_TASK_ID, null) ?: return null
-        return PendingOverlay(
+        return PendingOverlayPayload(
             taskId = taskId,
             event = prefs.getString(KEY_EVENT, "") ?: "",
             description = prefs.getString(KEY_DESCRIPTION, "") ?: "",
@@ -59,11 +59,4 @@ object PendingOverlayManager {
         return true
     }
 
-    data class PendingOverlay(
-        val taskId: String,
-        val event: String,
-        val description: String,
-        val logId: Long,
-        val notificationId: Int
-    )
 }
