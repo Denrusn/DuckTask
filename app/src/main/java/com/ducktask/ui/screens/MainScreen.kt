@@ -114,6 +114,11 @@ private enum class LogTab {
     RUNTIME
 }
 
+private enum class TaskTab {
+    PENDING,
+    ALERTING
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -131,10 +136,12 @@ fun MainScreen(
     var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var logTab by rememberSaveable { mutableStateOf(LogTab.EXECUTION.name) }
     var deletingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+    var taskTab by rememberSaveable { mutableStateOf(TaskTab.PENDING.name) }
     var showSuccess by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     val currentDestination = MainDestination.valueOf(destination)
     val currentLogTab = LogTab.valueOf(logTab)
+    val currentTaskTab = TaskTab.valueOf(taskTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
     val deletingTask = tasks.firstOrNull { it.taskId == deletingTaskId }
     val openLogTab: (LogTab) -> Unit = {
@@ -251,6 +258,8 @@ fun MainScreen(
                 MainDestination.HOME -> HomeContent(
                     uiState = uiState,
                     tasks = tasks,
+                    currentTaskTab = currentTaskTab,
+                    onTaskTabChange = { taskTab = it },
                     onInputChange = { viewModel.onEvent(MainUiEvent.InputChanged(it)) },
                     onReminderModeChange = { viewModel.onEvent(MainUiEvent.CreateReminderModeChanged(it)) },
                     onSubmit = {
@@ -420,6 +429,8 @@ private fun LogPageContent(
 private fun HomeContent(
     uiState: MainUiState,
     tasks: List<Task>,
+    currentTaskTab: TaskTab,
+    onTaskTabChange: (TaskTab) -> Unit,
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
     onSubmit: () -> Unit,
@@ -429,25 +440,46 @@ private fun HomeContent(
 ) {
     var showInputSheet by remember { mutableStateOf(false) }
 
+    // Filter tasks based on current tab
+    val filteredTasks = when (currentTaskTab) {
+        TaskTab.PENDING -> tasks.filter { it.status == TaskStatus.PENDING }
+        TaskTab.ALERTING -> tasks.filter { it.status == TaskStatus.ALERTING }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             if (tasks.isEmpty()) {
                 EmptyState()
             } else {
-                Text(
-                    text = "待提醒 (${tasks.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+                // Tab selector
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val pendingCount = tasks.count { it.status == TaskStatus.PENDING }
+                    val alertingCount = tasks.count { it.status == TaskStatus.ALERTING }
+
+                    FilterChip(
+                        selected = currentTaskTab == TaskTab.PENDING,
+                        onClick = { onTaskTabChange(TaskTab.PENDING) },
+                        label = { Text("待提醒 ($pendingCount)") }
+                    )
+                    FilterChip(
+                        selected = currentTaskTab == TaskTab.ALERTING,
+                        onClick = { onTaskTabChange(TaskTab.ALERTING) },
+                        label = { Text("已提醒待完成 ($alertingCount)") }
+                    )
+                }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(tasks, key = { it.taskId }) { task ->
+                    items(filteredTasks, key = { it.taskId }) { task ->
                         TaskCard(
                             task = task,
                             onDelete = { onDelete(task) },
