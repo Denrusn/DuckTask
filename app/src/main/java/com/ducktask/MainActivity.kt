@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +33,7 @@ import com.ducktask.app.util.PermissionUtils
 
 class MainActivity : ComponentActivity() {
     private var permissionIssues by mutableStateOf<List<AppPermissionIssue>>(emptyList())
+    private var pendingBatteryCheck = false
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -79,10 +82,27 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissionIssues()
+
+        // If we just returned from battery settings, check again after delay
+        if (pendingBatteryCheck) {
+            pendingBatteryCheck = false
+            Handler(Looper.getMainLooper()).postDelayed({
+                refreshPermissionIssues()
+            }, 500)
+        }
     }
 
     private fun refreshPermissionIssues() {
-        permissionIssues = PermissionUtils.findPermissionIssues(this)
+        val issues = PermissionUtils.findPermissionIssues(this)
+        val hadBatteryIssue = permissionIssues.any { it.type == AppPermissionType.BATTERY_OPTIMIZATION }
+        val hasBatteryIssueNow = issues.any { it.type == AppPermissionType.BATTERY_OPTIMIZATION }
+
+        permissionIssues = issues
+
+        // If the permission was granted but state hasn't updated yet, schedule delayed check
+        if (hadBatteryIssue && !hasBatteryIssueNow) {
+            pendingBatteryCheck = true
+        }
     }
 
     private fun resolvePermission(type: AppPermissionType) {
@@ -99,8 +119,11 @@ class MainActivity : ComponentActivity() {
             AppPermissionType.EXACT_ALARM,
             AppPermissionType.OVERLAY,
             AppPermissionType.FULL_SCREEN,
-            AppPermissionType.BATTERY_OPTIMIZATION,
             AppPermissionType.AUTO_START -> {
+                launchSettings(type)
+            }
+            AppPermissionType.BATTERY_OPTIMIZATION -> {
+                pendingBatteryCheck = true
                 launchSettings(type)
             }
         }
