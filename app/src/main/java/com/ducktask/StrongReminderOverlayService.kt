@@ -73,12 +73,14 @@ class StrongReminderOverlayService : Service() {
     private var unlockReceiver: BroadcastReceiver? = null
     private var unlockPollAttemptsRemaining = 0
     private var unlockPollIntervalMs = 500L
-    private val unlockCheckRunnable = Runnable {
-        if (!isWaitingForUnlock) return@Runnable
-        val shown = maybeShowDeferredOverlay("unlock_poll")
-        if (!shown && unlockPollAttemptsRemaining > 0) {
-            unlockPollAttemptsRemaining -= 1
-            mainHandler.postDelayed(unlockCheckRunnable, unlockPollIntervalMs)
+    private val unlockCheckRunnable: Runnable = object : Runnable {
+        override fun run() {
+            if (!isWaitingForUnlock) return
+            val shown = maybeShowDeferredOverlay("unlock_poll")
+            if (!shown && unlockPollAttemptsRemaining > 0) {
+                unlockPollAttemptsRemaining -= 1
+                mainHandler.postDelayed(this, unlockPollIntervalMs)
+            }
         }
     }
 
