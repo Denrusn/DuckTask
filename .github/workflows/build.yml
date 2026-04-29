@@ -31,7 +31,29 @@ jobs:
         run: gradle clean --no-daemon
 
       - name: Run Unit Tests
+        id: unit_tests
+        continue-on-error: true
         run: gradle testDebugUnitTest --no-daemon
+
+      - name: Summarize Unit Test Failures
+        if: always()
+        run: |
+          shopt -s nullglob
+          failure_count=0
+          for file in app/build/test-results/testDebugUnitTest/*.xml; do
+            if rg -q '<failure|<error' "$file"; then
+              suite=$(basename "$file" .xml)
+              echo "::error::Failed unit test suite: ${suite}"
+              failure_count=$((failure_count + 1))
+            fi
+          done
+          if [ "$failure_count" -gt 0 ]; then
+            echo "Detected ${failure_count} failed unit test suite(s)."
+          fi
+
+      - name: Fail If Unit Tests Failed
+        if: steps.unit_tests.outcome == 'failure'
+        run: exit 1
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon
