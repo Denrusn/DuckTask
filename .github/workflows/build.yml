@@ -33,7 +33,24 @@ jobs:
       - name: Run Unit Tests
         id: unit_tests
         continue-on-error: true
-        run: gradle testDebugUnitTest --no-daemon
+        run: |
+          set -o pipefail
+          log_file=$(mktemp)
+          if gradle testDebugUnitTest --no-daemon 2>&1 | tee "$log_file"; then
+            exit 0
+          fi
+
+          if grep -En 'e: |error:|FAILURE:|What went wrong|Execution failed|Caused by:' "$log_file" >/tmp/unit-test-errors.txt; then
+            tail -n 20 /tmp/unit-test-errors.txt | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          else
+            tail -n 40 "$log_file" | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          fi
+
+          exit 1
 
       - name: Summarize Unit Test Failures
         if: always()
@@ -41,7 +58,7 @@ jobs:
           shopt -s nullglob
           failure_count=0
           for file in app/build/test-results/testDebugUnitTest/*.xml; do
-            if rg -q '<failure|<error' "$file"; then
+            if grep -Eq '<failure|<error' "$file"; then
               suite=$(basename "$file" .xml)
               echo "::error::Failed unit test suite: ${suite}"
               failure_count=$((failure_count + 1))
