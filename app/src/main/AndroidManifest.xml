@@ -49,6 +49,14 @@
             android:name=".ReminderActionReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".AlarmLoopReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ducktask.app.ACTION_LOOP_REMINDER" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".StrongReminderOverlayService"
             android:exported="false"
