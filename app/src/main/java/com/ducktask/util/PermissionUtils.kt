@@ -96,8 +96,8 @@ object PermissionUtils {
             issues += AppPermissionIssue(
                 type = AppPermissionType.AUTO_START,
                 title = "建议开启自启动",
-                description = "部分厂商会限制应用后台拉起。请在系统自启动管理页允许 DuckTask 自启动；系统无法直接确认是否已开启，如已开启可忽略。",
-                actionLabel = "自启动设置"
+                description = "部分厂商会限制应用后台拉起。请在系统自启动管理页允许 DuckTask 自启动，完成后返回点击\"已完成\"确认。",
+                actionLabel = "前往设置"
             )
         }
 
