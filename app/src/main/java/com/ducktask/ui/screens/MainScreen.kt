@@ -60,7 +60,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -519,6 +521,14 @@ private fun HomeContent(
                     onSubmit()
                     // Don't close sheet here - let ViewModel handle success/failure
                     // Sheet will be closed when error is cleared
+                },
+                onSubmitWithOptions = { alarmEnabled, alarmRingtone, alarmVibrateCount, alertLoopEnabled, alertLoopInterval, alertLoopMaxCount ->
+                    viewModel.onEvent(
+                        MainUiEvent.SubmitTaskWithOptions(
+                            alarmEnabled, alarmRingtone, alarmVibrateCount,
+                            alertLoopEnabled, alertLoopInterval, alertLoopMaxCount
+                        )
+                    )
                 }
             )
         }
@@ -763,8 +773,16 @@ private fun InputCard(
     isLoading: Boolean,
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    onSubmitWithOptions: (Boolean, Boolean, Int, Boolean, Int, Int) -> Unit
 ) {
+    var alarmEnabled by remember { mutableStateOf(false) }
+    var alarmRingtone by remember { mutableStateOf(true) }
+    var alarmVibrateCount by remember { mutableIntStateOf(5) }
+    var alertLoopEnabled by remember { mutableStateOf(false) }
+    var alertLoopInterval by remember { mutableIntStateOf(1) }
+    var alertLoopMaxCount by remember { mutableIntStateOf(5) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -802,9 +820,117 @@ private fun InputCard(
             Spacer(modifier = Modifier.height(12.dp))
             ReminderModePicker(selectedMode = createReminderMode, onModeSelected = onReminderModeChange)
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 提醒样式选择
+            Text(
+                text = "提醒样式",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            Row(
+                modifier = Modifier.padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = !alarmEnabled,
+                    onClick = { alarmEnabled = false },
+                    label = { Text("普通提醒") }
+                )
+                FilterChip(
+                    selected = alarmEnabled,
+                    onClick = { alarmEnabled = true },
+                    label = { Text("闹钟样式") }
+                )
+            }
+
+            // 闹钟样式选项
+            if (alarmEnabled) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("铃声", style = MaterialTheme.typography.bodyMedium)
+                            Switch(checked = alarmRingtone, onCheckedChange = { alarmRingtone = it })
+                        }
+
+                        Text(
+                            text = "震动次数: $alarmVibrateCount",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        Slider(
+                            value = alarmVibrateCount.toFloat(),
+                            onValueChange = { alarmVibrateCount = it.toInt() },
+                            valueRange = 1f..10f,
+                            steps = 8
+                        )
+                    }
+                }
+            }
+
+            // 循环提醒选项（强提醒时显示）
+            if (createReminderMode == ReminderMode.STRONG) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("循环提醒", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = alertLoopEnabled, onCheckedChange = { alertLoopEnabled = it })
+                }
+
+                if (alertLoopEnabled) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "间隔: $alertLoopInterval 分钟",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = alertLoopInterval.toFloat(),
+                                onValueChange = { alertLoopInterval = it.toInt() },
+                                valueRange = 1f..10f,
+                                steps = 8
+                            )
+
+                            Text(
+                                text = "最大次数: $alertLoopMaxCount 次",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                            Slider(
+                                value = alertLoopMaxCount.toFloat(),
+                                onValueChange = { alertLoopMaxCount = it.toInt() },
+                                valueRange = 1f..10f,
+                                steps = 8
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
             Button(
-                onClick = onSubmit,
+                onClick = {
+                    if (alarmEnabled || alertLoopEnabled) {
+                        // 使用带选项的提交
+                        onSubmitWithOptions(alarmEnabled, alarmRingtone, alarmVibrateCount, alertLoopEnabled, alertLoopInterval, alertLoopMaxCount)
+                    } else {
+                        onSubmit()
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
