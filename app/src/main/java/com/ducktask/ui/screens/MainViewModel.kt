@@ -29,6 +29,14 @@ sealed class MainUiEvent {
     data class InputChanged(val text: String) : MainUiEvent()
     data class CreateReminderModeChanged(val mode: Int) : MainUiEvent()
     data object SubmitTask : MainUiEvent()
+    data class SubmitTaskWithOptions(
+        val alarmEnabled: Boolean,
+        val alarmRingtone: Boolean,
+        val alarmVibrateCount: Int,
+        val alertLoopEnabled: Boolean,
+        val alertLoopInterval: Int,
+        val alertLoopMaxCount: Int
+    ) : MainUiEvent()
     data class DeleteTask(val task: Task) : MainUiEvent()
     data class MarkDone(val task: Task) : MainUiEvent()
     data object ClearSuccess : MainUiEvent()
@@ -57,6 +65,7 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
                 _uiState.update { it.copy(createReminderMode = event.mode) }
             }
             MainUiEvent.SubmitTask -> submitTask()
+            is MainUiEvent.SubmitTaskWithOptions -> submitTaskWithOptions(event)
             is MainUiEvent.DeleteTask -> deleteTask(event.task)
             is MainUiEvent.MarkDone -> markDone(event.task)
             MainUiEvent.ClearSuccess -> _uiState.update { it.copy(successMessage = null) }
@@ -107,6 +116,46 @@ class MainViewModel(private val repository: TaskRepository) : ViewModel() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             repository.createTaskFromText(text, _uiState.value.createReminderMode).fold(
+                onSuccess = { task ->
+                    _uiState.update {
+                        it.copy(
+                            inputText = "",
+                            isLoading = false,
+                            successMessage = "已创建提醒，下一次执行：${formatAbsoluteTime(task.nextRunTime)} · ${task.reminderModeLabel()} · ${task.event}"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "解析失败，请换一种说法"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    private fun submitTaskWithOptions(event: MainUiEvent.SubmitTaskWithOptions) {
+        val text = _uiState.value.inputText.trim()
+        if (text.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "请输入提醒内容") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            repository.createTaskFromText(
+                text,
+                _uiState.value.createReminderMode,
+                alarmEnabled = event.alarmEnabled,
+                alarmRingtone = event.alarmRingtone,
+                alarmVibrateCount = event.alarmVibrateCount,
+                alertLoopEnabled = event.alertLoopEnabled,
+                alertLoopIntervalMinutes = event.alertLoopInterval,
+                alertLoopMaxCount = event.alertLoopMaxCount
+            ).fold(
                 onSuccess = { task ->
                     _uiState.update {
                         it.copy(

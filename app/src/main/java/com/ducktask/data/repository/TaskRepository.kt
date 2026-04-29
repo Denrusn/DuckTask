@@ -38,7 +38,16 @@ class TaskRepository(
 
     suspend fun getTaskById(id: Long): Task? = taskDao.getTaskById(id)
 
-    suspend fun createTaskFromText(text: String, reminderMode: Int = ReminderMode.NORMAL): Result<Task> {
+    suspend fun createTaskFromText(
+        text: String,
+        reminderMode: Int = ReminderMode.NORMAL,
+        alarmEnabled: Boolean = false,
+        alarmRingtone: Boolean = true,
+        alarmVibrateCount: Int = 5,
+        alertLoopEnabled: Boolean = false,
+        alertLoopIntervalMinutes: Int = 1,
+        alertLoopMaxCount: Int = 5
+    ): Result<Task> {
         return runCatching {
             val parsed = TimeParser.parse(text)
             val repeat = parsed.repeat?.takeIf { it.isRepeating() }
@@ -51,7 +60,13 @@ class TaskRepository(
                 repeat = repeat?.toJson(),
                 reminderMode = reminderMode,
                 triggerType = repeat?.triggerType() ?: TRIGGER_TYPE_DATE,
-                nextRunTime = firstRunTime
+                nextRunTime = firstRunTime,
+                alarmEnabled = alarmEnabled,
+                alarmRingtone = alarmRingtone,
+                alarmVibrateCount = alarmVibrateCount,
+                alertLoopEnabled = alertLoopEnabled,
+                alertLoopIntervalMinutes = alertLoopIntervalMinutes,
+                alertLoopMaxCount = alertLoopMaxCount
             )
             val id = taskDao.insert(task)
             task.copy(id = id).also(scheduler::schedule)
