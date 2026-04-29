@@ -106,7 +106,7 @@ class StrongReminderOverlayService : Service() {
         }
     }
 
-    private enum class HoldState {
+    enum class HoldState {
         IDLE,
         CHARGING,
         CHARGED_WAITING_RELEASE,
