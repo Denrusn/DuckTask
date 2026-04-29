@@ -43,7 +43,17 @@ data class Task(
     val triggerType: String = TRIGGER_TYPE_DATE,
     val status: Int = TaskStatus.PENDING,
     val createTime: Long = System.currentTimeMillis(),
-    val nextRunTime: Long = reminderTime
+    val nextRunTime: Long = reminderTime,
+
+    // 闹钟样式选项
+    val alarmEnabled: Boolean = false,
+    val alarmRingtone: Boolean = true,
+    val alarmVibrateCount: Int = 5,
+
+    // 循环提醒选项
+    val alertLoopEnabled: Boolean = false,
+    val alertLoopIntervalMinutes: Int = 1,
+    val alertLoopMaxCount: Int = 5
 ) {
     fun repeatRule(): RepeatRule? = repeat?.let(RepeatRule::fromJson)
 
@@ -52,6 +62,8 @@ data class Task(
     fun reminderModeLabel(): String = ReminderMode.label(reminderMode)
 
     fun isAlerting(): Boolean = status == TaskStatus.ALERTING
+
+    fun isPending(): Boolean = status == TaskStatus.PENDING
 }
 
 @Entity(
