@@ -28,13 +28,13 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.text.TextPaint
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -72,14 +72,11 @@ class StrongReminderOverlayService : Service() {
     private var topBeamView: View? = null
     private var bottomBeamView: View? = null
     private var flashView: View? = null
-    private var buttonContainer: FrameLayout? = null
-    private var buttonCenterLayout: LinearLayout? = null
-    private var ringView: RingProgressView? = null
-    private var buttonGlyph: BeaconGlyphView? = null
-    private var buttonText: TextView? = null
+    private var actionClusterView: OverlayActionClusterView? = null
     private var particleViews = mutableListOf<View>()
 
     // 状态
+    private val holdController = OverlayHoldController()
     private var holdRunnable: Runnable? = null
     private val dismissRunnable = Runnable { dismissReminder() }
     private var currentTaskId: String = ""
@@ -90,6 +87,7 @@ class StrongReminderOverlayService : Service() {
     private var holdState = HoldState.IDLE
     private var isPointerDown = false
     private var holdProgress = 0f
+    private var completionProgress = 0f
     private var currentMilestone = 0
     private var ambientPulse = 0f
     private var chargedPulse = 0f
@@ -307,13 +305,17 @@ class StrongReminderOverlayService : Service() {
             topMargin = -dp(126)
         })
 
-        buttonContainer = NonOverlappingFrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            clipChildren = false
-            clipToPadding = false
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        actionClusterView = OverlayActionClusterView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(240), dp(240)).apply {
+                gravity = Gravity.CENTER
+                topMargin = dp(60)
+            }
+            setOnTouchListener { _, event ->
+                handleButtonTouch(event)
+                true
+            }
         }
-        root.addView(buttonContainer, FrameLayout.LayoutParams(dp(240), dp(240)).apply {
+        root.addView(actionClusterView, FrameLayout.LayoutParams(dp(240), dp(240)).apply {
             gravity = Gravity.CENTER
             topMargin = dp(60)
         })
@@ -356,7 +358,8 @@ class StrongReminderOverlayService : Service() {
             stopSelf()
         }
 
-        createRingButton()
+        syncHoldTransition(holdController.forceIdle())
+        applyActionClusterBase(accentColor)
         enterIdleState()
     }
 
@@ -432,65 +435,6 @@ class StrongReminderOverlayService : Service() {
         unlockReceiver = null
     }
 
-    private fun createRingButton() {
-        val container = buttonContainer ?: return
-        container.removeAllViews()
-        buttonCenterLayout = null
-
-        ringView = RingProgressView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            setBackgroundColor(Color.TRANSPARENT)
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        }
-        container.addView(ringView)
-
-        val centerLayout = NonOverlappingLinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.TRANSPARENT)
-            clipChildren = false
-            clipToPadding = false
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply { gravity = Gravity.CENTER }
-        }
-        buttonCenterLayout = centerLayout
-
-        buttonGlyph = BeaconGlyphView(this).apply {
-            alpha = 0.95f
-            setAccentColor(accentColor)
-            setBackgroundColor(Color.TRANSPARENT)
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        }
-        centerLayout.addView(buttonGlyph, LinearLayout.LayoutParams(dp(74), dp(74)).apply {
-            bottomMargin = dp(4)
-        })
-
-        buttonText = TextView(this).apply {
-            text = "长按确认"
-            setTextColor(Color.WHITE)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textSize = 18f
-            gravity = Gravity.CENTER
-            letterSpacing = 0.06f
-            includeFontPadding = false
-            setBackgroundColor(Color.TRANSPARENT)
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        }
-        centerLayout.addView(buttonText)
-        container.addView(centerLayout)
-
-        container.setOnTouchListener { _, event ->
-            handleButtonTouch(event)
-            true
-        }
-    }
-
     private fun handleButtonTouch(event: MotionEvent) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> startHold()
@@ -504,24 +448,15 @@ class StrongReminderOverlayService : Service() {
         holdRunnable?.let { mainHandler.removeCallbacks(it) }
         completionAnimator?.cancel()
         isPointerDown = true
-        holdState = HoldState.CHARGING
-        holdProgress = 0f
+        completionProgress = 0f
         currentMilestone = 0
         chargedPulse = 0f
-        buttonText?.text = "保持按住"
+        syncHoldTransition(holdController.press())
         updateStatusText("保持按住  能量校准中", Color.parseColor("#FFF9D8AF"))
-        ringView?.setHoldState(HoldState.CHARGING)
-        ringView?.setProgress(0f)
-        ringView?.setAccentColor(accentColor)
-        ringView?.setChargedPulse(0f)
-        ringView?.setBurstProgress(0f)
-        buttonGlyph?.setHoldState(HoldState.CHARGING)
-        buttonGlyph?.setChargeProgress(0f)
-        buttonGlyph?.setChargedPulse(0f)
-        buttonGlyph?.setCompletionProgress(0f)
-        buttonGlyph?.setAccentColor(accentColor)
+        applyActionClusterBase(accentColor)
+        actionClusterView?.setChargedPulse(0f)
+        actionClusterView?.setCompletionProgress(0f)
         applyChargingVisuals(0f)
-        animateButtonScale(0.94f, 120L)
         startOrbitAnimator(1_450L)
         stopChargedStateAnimator()
         vibrateTick(20L, 40)
@@ -530,14 +465,14 @@ class StrongReminderOverlayService : Service() {
             override fun run() {
                 val elapsed = (SystemClock.elapsedRealtime() - startedAt).coerceAtMost(HOLD_DURATION_MS)
                 val progress = elapsed.toFloat() / HOLD_DURATION_MS.toFloat()
-                holdProgress = progress
-                ringView?.setProgress(progress)
-                applyChargingVisuals(progress)
-                emitChargeMilestone(progress)
+                val transition = holdController.updateProgress(progress)
+                syncHoldTransition(transition)
+                emitChargeMilestone(holdProgress)
 
-                if (elapsed >= HOLD_DURATION_MS) {
+                if (transition.event == OverlayHoldController.TransitionEvent.ENTERED_CHARGED || elapsed >= HOLD_DURATION_MS) {
                     enterChargedWaitingRelease()
                 } else {
+                    applyChargingVisuals(holdProgress)
                     mainHandler.postDelayed(this, 16)
                 }
             }
@@ -547,55 +482,47 @@ class StrongReminderOverlayService : Service() {
 
     private fun releaseHold() {
         isPointerDown = false
-        when (holdState) {
-            HoldState.CHARGING -> enterIdleState()
-            HoldState.CHARGED_WAITING_RELEASE -> triggerCompletionSequence()
-            HoldState.COMPLETING, HoldState.IDLE -> Unit
+        val transition = holdController.release()
+        syncHoldTransition(transition)
+        when (transition.event) {
+            OverlayHoldController.TransitionEvent.RESET_TO_IDLE -> enterIdleState()
+            OverlayHoldController.TransitionEvent.ENTERED_COMPLETING -> triggerCompletionSequence()
+            OverlayHoldController.TransitionEvent.NONE,
+            OverlayHoldController.TransitionEvent.ENTERED_CHARGING,
+            OverlayHoldController.TransitionEvent.ENTERED_CHARGED -> Unit
         }
     }
 
     private fun enterIdleState() {
         holdRunnable?.let { mainHandler.removeCallbacks(it) }
         holdRunnable = null
-        holdState = HoldState.IDLE
-        holdProgress = 0f
+        syncHoldTransition(holdController.forceIdle())
         currentMilestone = 0
         chargedPulse = 0f
-        ringView?.setHoldState(HoldState.IDLE)
-        ringView?.setProgress(0f)
-        ringView?.setAccentColor(accentColor)
-        ringView?.setChargedPulse(0f)
-        ringView?.setBurstProgress(0f)
-        buttonGlyph?.setHoldState(HoldState.IDLE)
-        buttonGlyph?.setChargeProgress(0f)
-        buttonGlyph?.setChargedPulse(0f)
-        buttonGlyph?.setCompletionProgress(0f)
-        buttonGlyph?.setAccentColor(accentColor)
-        buttonText?.text = "长按确认"
+        completionProgress = 0f
         updateStatusText("长按完成提醒", Color.parseColor("#F6FFD7B0"))
+        applyActionClusterBase(accentColor)
+        actionClusterView?.setChargedPulse(0f)
+        actionClusterView?.setCompletionProgress(0f)
         startOrbitAnimator(4_200L)
         stopChargedStateAnimator()
-        animateButtonScale(1f, 160L)
         applyIdleVisuals()
     }
 
     private fun enterChargedWaitingRelease() {
-        if (holdState == HoldState.CHARGED_WAITING_RELEASE || holdState == HoldState.COMPLETING) return
+        if (holdState == HoldState.COMPLETING) return
         holdRunnable?.let { mainHandler.removeCallbacks(it) }
         holdRunnable = null
-        holdState = HoldState.CHARGED_WAITING_RELEASE
-        holdProgress = 1f
-        ringView?.setHoldState(HoldState.CHARGED_WAITING_RELEASE)
-        ringView?.setProgress(1f)
-        ringView?.setAccentColor(armedColor)
-        buttonGlyph?.setHoldState(HoldState.CHARGED_WAITING_RELEASE)
-        buttonGlyph?.setChargeProgress(1f)
-        buttonGlyph?.setAccentColor(armedColor)
-        buttonText?.text = "松手确认"
+        if (holdState != HoldState.CHARGED_WAITING_RELEASE) {
+            syncHoldTransition(holdController.updateProgress(1f))
+        }
+        if (holdState != HoldState.CHARGED_WAITING_RELEASE) return
+        completionProgress = 0f
         updateStatusText("已锁定  松手立即完成", Color.parseColor("#FFFFF3D6"))
+        applyActionClusterBase(armedColor)
+        actionClusterView?.setChargedPulse(0f)
         startOrbitAnimator(900L)
         startChargedStateAnimator()
-        animateButtonScale(0.98f, 180L)
         applyChargedWaitingVisuals(0f)
         vibrateTick(40L, 180)
         if (!isPointerDown) {
@@ -604,20 +531,20 @@ class StrongReminderOverlayService : Service() {
     }
 
     private fun triggerCompletionSequence() {
-        if (holdState == HoldState.COMPLETING) return
+        val transition = holdController.completeFromCharged()
+        if (transition.event == OverlayHoldController.TransitionEvent.ENTERED_COMPLETING) {
+            syncHoldTransition(transition)
+        }
+        if (holdState != HoldState.COMPLETING) return
         holdRunnable?.let { mainHandler.removeCallbacks(it) }
         holdRunnable = null
         mainHandler.removeCallbacks(dismissRunnable)
-        holdState = HoldState.COMPLETING
-        buttonText?.text = "已完成"
+        completionProgress = 0f
         updateStatusText("提醒已完成", Color.parseColor("#FFD9FFE1"))
-        ringView?.setHoldState(HoldState.COMPLETING)
-        ringView?.setAccentColor(successColor)
-        buttonGlyph?.setHoldState(HoldState.COMPLETING)
-        buttonGlyph?.setAccentColor(successColor)
+        applyActionClusterBase(successColor)
+        actionClusterView?.setCompletionProgress(0f)
         stopChargedStateAnimator()
         startOrbitAnimator(700L)
-        animateButtonScale(1.1f, 220L)
         vibrateTick(80L, 220)
         completionAnimator?.cancel()
         completionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -625,7 +552,8 @@ class StrongReminderOverlayService : Service() {
             interpolator = DecelerateInterpolator()
             addUpdateListener { animator ->
                 val progress = animator.animatedValue as Float
-                ringView?.setBurstProgress(progress)
+                completionProgress = progress
+                actionClusterView?.setCompletionProgress(progress)
                 applyCompletionVisuals(progress)
             }
             start()
@@ -634,19 +562,19 @@ class StrongReminderOverlayService : Service() {
         mainHandler.postDelayed(dismissRunnable, 920L)
     }
 
-    private fun animateButtonScale(targetScale: Float, durationMs: Long) {
-        ringView?.animate()
-            ?.scaleX(targetScale)
-            ?.scaleY(targetScale)
-            ?.setDuration(durationMs)
-            ?.setInterpolator(DecelerateInterpolator())
-            ?.start()
-        buttonCenterLayout?.animate()
-            ?.scaleX(targetScale)
-            ?.scaleY(targetScale)
-            ?.setDuration(durationMs)
-            ?.setInterpolator(DecelerateInterpolator())
-            ?.start()
+    private fun syncHoldTransition(transition: OverlayHoldController.Transition) {
+        holdState = transition.state
+        holdProgress = transition.progress
+        actionClusterView?.setHoldState(holdState)
+        actionClusterView?.setProgress(holdProgress)
+    }
+
+    private fun applyActionClusterBase(color: Int) {
+        actionClusterView?.setAccentColor(color)
+        actionClusterView?.setOrbitRotation(0f)
+        actionClusterView?.setAmbientPulse(ambientPulse)
+        actionClusterView?.setChargedPulse(chargedPulse)
+        actionClusterView?.setCompletionProgress(completionProgress)
     }
 
     private fun applyIdleVisuals() {
@@ -689,12 +617,9 @@ class StrongReminderOverlayService : Service() {
             scaleY = 1f + pulse * 0.015f
             translationY = 0f
         }
-        buttonGlyph?.apply {
-            scaleX = 1f + pulse * 0.03f
-            scaleY = 1f + pulse * 0.03f
-            alpha = 0.95f
-        }
-        buttonGlyph?.setAmbientPulse(pulse)
+        actionClusterView?.setAmbientPulse(pulse)
+        actionClusterView?.setChargedPulse(0f)
+        actionClusterView?.setCompletionProgress(0f)
         flashView?.alpha = 0f
     }
 
@@ -738,19 +663,13 @@ class StrongReminderOverlayService : Service() {
             scaleY = 1f + progress * 0.03f
             translationY = -progress * dp(3).toFloat()
         }
-        buttonGlyph?.apply {
-            scaleX = 1f + progress * 0.12f
-            scaleY = 1f + progress * 0.12f
-            alpha = 0.94f + progress * 0.06f
+        actionClusterView?.setAmbientPulse(pulse)
+        actionClusterView?.setChargedPulse(0f)
         }
-        buttonGlyph?.setChargeProgress(progress)
-        buttonGlyph?.setAmbientPulse(pulse)
-    }
 
     private fun applyChargedWaitingVisuals(pulse: Float) {
         chargedPulse = pulse
-        ringView?.setChargedPulse(pulse)
-        buttonGlyph?.setChargedPulse(pulse)
+        actionClusterView?.setChargedPulse(pulse)
         backdropTintView?.alpha = 0.14f + pulse * 0.08f
         glowView?.apply {
             scaleX = 1.34f + pulse * 0.16f
@@ -789,16 +708,11 @@ class StrongReminderOverlayService : Service() {
             scaleY = 1.02f + pulse * 0.03f
             translationY = -dp(5).toFloat() - pulse * dp(2).toFloat()
         }
-        buttonGlyph?.apply {
-            scaleX = 1.1f + pulse * 0.08f
-            scaleY = 1.1f + pulse * 0.08f
-            alpha = 1f
-        }
     }
 
     private fun applyCompletionVisuals(progress: Float) {
-        ringView?.setChargedPulse(1f - progress * 0.45f)
-        buttonGlyph?.setCompletionProgress(progress)
+        actionClusterView?.setChargedPulse(1f - progress * 0.45f)
+        actionClusterView?.setCompletionProgress(progress)
         backdropTintView?.alpha = 0.26f - progress * 0.16f
         glowView?.apply {
             scaleX = 1.46f + progress * 0.48f
@@ -836,11 +750,6 @@ class StrongReminderOverlayService : Service() {
             scaleY = 1.03f + progress * 0.05f
             translationY = -dp(6).toFloat() + progress * dp(12).toFloat()
         }
-        buttonGlyph?.apply {
-            scaleX = 1.12f + progress * 0.14f
-            scaleY = 1.12f + progress * 0.14f
-            alpha = 1f - progress * 0.18f
-        }
         flashView?.alpha = when {
             progress < 0.18f -> progress / 0.18f * 0.52f
             progress < 0.42f -> 0.52f - ((progress - 0.18f) / 0.24f) * 0.34f
@@ -875,8 +784,7 @@ class StrongReminderOverlayService : Service() {
             interpolator = LinearInterpolator()
             addUpdateListener { animator ->
                 val rotation = animator.animatedValue as Float
-                ringView?.setOrbitRotation(rotation)
-                buttonGlyph?.rotation = rotation * 0.24f
+                actionClusterView?.setOrbitRotation(rotation)
             }
             start()
         }
@@ -888,7 +796,6 @@ class StrongReminderOverlayService : Service() {
                 interpolator = LinearInterpolator()
                 addUpdateListener { animator ->
                     ambientPulse = animator.animatedValue as Float
-                    ringView?.setAmbientPulse(ambientPulse)
                     if (holdState == HoldState.IDLE) {
                         applyIdleVisuals()
                     } else if (holdState == HoldState.CHARGING) {
@@ -919,7 +826,7 @@ class StrongReminderOverlayService : Service() {
         chargedStateAnimator?.cancel()
         chargedStateAnimator = null
         chargedPulse = 0f
-        ringView?.setChargedPulse(0f)
+        actionClusterView?.setChargedPulse(0f)
     }
 
     private fun cancelVisualAnimators() {
@@ -933,11 +840,17 @@ class StrongReminderOverlayService : Service() {
         completionAnimator = null
         ambientPulse = 0f
         chargedPulse = 0f
+        completionProgress = 0f
     }
 
     private fun updateStatusText(text: String, color: Int) {
         statusText?.text = text
         statusText?.setTextColor(color)
+    }
+
+    private fun currentActionClusterCenter(): Pair<Float, Float>? {
+        val cluster = actionClusterView ?: return null
+        return (cluster.x + cluster.width / 2f) to (cluster.y + cluster.height / 2f)
     }
 
     private fun vibrateTick(durationMs: Long, amplitude: Int) {
@@ -957,8 +870,7 @@ class StrongReminderOverlayService : Service() {
 
     private fun triggerParticleEffect() {
         val root = overlayView ?: return
-        val centerX = root.width / 2f
-        val centerY = root.height / 2f
+        val (centerX, centerY) = currentActionClusterCenter() ?: return
         val particleCount = 28
 
         for (i in 0 until particleCount) {
@@ -1009,6 +921,7 @@ class StrongReminderOverlayService : Service() {
 
     private fun triggerRippleEffect(delayMs: Long, startScale: Float, strokeColor: Int) {
         val root = overlayView ?: return
+        val (centerX, centerY) = currentActionClusterCenter() ?: return
 
         val ripple = View(this).apply {
             background = GradientDrawable().apply {
@@ -1017,10 +930,10 @@ class StrongReminderOverlayService : Service() {
                 setStroke(dp(3), strokeColor)
             }
         }
-        val size = dp(220)
+        val size = ((actionClusterView?.width ?: dp(220)) * 0.92f).toInt()
         ripple.layoutParams = FrameLayout.LayoutParams(size, size)
-        ripple.x = root.width / 2f - size / 2
-        ripple.y = root.height / 2f - size / 2
+        ripple.x = centerX - size / 2f
+        ripple.y = centerY - size / 2f
         ripple.scaleX = startScale
         ripple.scaleY = startScale
         root.addView(ripple)
@@ -1116,57 +1029,184 @@ class StrongReminderOverlayService : Service() {
         topBeamView = null
         bottomBeamView = null
         flashView = null
-        buttonContainer = null
-        buttonCenterLayout = null
-        ringView = null
-        buttonGlyph = null
-        buttonText = null
+        actionClusterView = null
         holdRunnable = null
+        syncHoldTransition(holdController.forceIdle())
         holdState = HoldState.IDLE
         isPointerDown = false
         holdProgress = 0f
+        completionProgress = 0f
         currentMilestone = 0
     }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
-    private class NonOverlappingFrameLayout(context: Context) : FrameLayout(context) {
-        override fun hasOverlappingRendering(): Boolean = false
+    internal class OverlayHoldController {
+        enum class TransitionEvent {
+            NONE,
+            ENTERED_CHARGING,
+            RESET_TO_IDLE,
+            ENTERED_CHARGED,
+            ENTERED_COMPLETING
+        }
+
+        data class Transition(
+            val state: HoldState,
+            val progress: Float,
+            val event: TransitionEvent,
+            val changed: Boolean
+        )
+
+        private var state: HoldState = HoldState.IDLE
+        private var progress: Float = 0f
+
+        fun press(): Transition {
+            if (state == HoldState.COMPLETING) return snapshot()
+            val changed = state != HoldState.CHARGING || progress != 0f
+            state = HoldState.CHARGING
+            progress = 0f
+            return snapshot(TransitionEvent.ENTERED_CHARGING, changed)
+        }
+
+        fun updateProgress(value: Float): Transition {
+            val clamped = value.coerceIn(0f, 1f)
+            return when (state) {
+                HoldState.IDLE, HoldState.COMPLETING -> snapshot()
+                HoldState.CHARGING -> {
+                    progress = clamped
+                    if (clamped >= 1f) {
+                        state = HoldState.CHARGED_WAITING_RELEASE
+                        progress = 1f
+                        snapshot(TransitionEvent.ENTERED_CHARGED, true)
+                    } else {
+                        snapshot(changed = true)
+                    }
+                }
+                HoldState.CHARGED_WAITING_RELEASE -> {
+                    progress = 1f
+                    snapshot()
+                }
+            }
+        }
+
+        fun release(): Transition {
+            return when (state) {
+                HoldState.CHARGING -> {
+                    state = HoldState.IDLE
+                    progress = 0f
+                    snapshot(TransitionEvent.RESET_TO_IDLE, true)
+                }
+                HoldState.CHARGED_WAITING_RELEASE -> {
+                    state = HoldState.COMPLETING
+                    progress = 1f
+                    snapshot(TransitionEvent.ENTERED_COMPLETING, true)
+                }
+                HoldState.IDLE, HoldState.COMPLETING -> snapshot()
+            }
+        }
+
+        fun completeFromCharged(): Transition {
+            return if (state == HoldState.CHARGED_WAITING_RELEASE) {
+                state = HoldState.COMPLETING
+                progress = 1f
+                snapshot(TransitionEvent.ENTERED_COMPLETING, true)
+            } else {
+                snapshot()
+            }
+        }
+
+        fun forceIdle(): Transition {
+            val changed = state != HoldState.IDLE || progress != 0f
+            state = HoldState.IDLE
+            progress = 0f
+            return snapshot(if (changed) TransitionEvent.RESET_TO_IDLE else TransitionEvent.NONE, changed)
+        }
+
+        private fun snapshot(
+            event: TransitionEvent = TransitionEvent.NONE,
+            changed: Boolean = false
+        ): Transition {
+            return Transition(state = state, progress = progress, event = event, changed = changed)
+        }
     }
 
-    private class NonOverlappingLinearLayout(context: Context) : LinearLayout(context) {
-        override fun hasOverlappingRendering(): Boolean = false
-    }
-
-    inner class BeaconGlyphView(context: Context) : View(context) {
-        private var glyphColor: Int = accentColor
+    inner class OverlayActionClusterView(context: Context) : View(context) {
+        private var progress: Float = 0f
+        private var accentColor: Int = this@StrongReminderOverlayService.accentColor
         private var holdState: HoldState = HoldState.IDLE
-        private var chargeProgress: Float = 0f
+        private var orbitRotation: Float = 0f
         private var ambientPulse: Float = 0f
         private var chargedPulse: Float = 0f
         private var completionProgress: Float = 0f
 
+        private val ringRect = RectF()
+        private val sliceRect = RectF()
+        private val innerArcRect = RectF()
+        private val outerArcRect = RectF()
+        private val labelRect = RectF()
+
         private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
+        private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val trailingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val slicePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val spokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val sparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
+        private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
         private val shellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Style.STROKE
-            strokeWidth = dp(4f)
             strokeCap = Cap.ROUND
         }
         private val accentStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Style.STROKE
-            strokeWidth = dp(5f)
             strokeCap = Cap.ROUND
         }
-        private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
-        private val detailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.FILL
+        private val detailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
+        private val burstPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
         }
-        private val arcRect = RectF()
-        private val arcRectOuter = RectF()
+        private val flarePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Style.STROKE
+            strokeCap = Cap.ROUND
+        }
+        private val labelFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.FILL }
+        private val labelStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Style.STROKE }
+        private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+            color = Color.WHITE
+        }
+
+        override fun hasOverlappingRendering(): Boolean = false
+
+        fun setProgress(value: Float) {
+            progress = value.coerceIn(0f, 1f)
+            invalidate()
+        }
 
         fun setAccentColor(color: Int) {
-            glyphColor = color
+            accentColor = color
             invalidate()
         }
 
@@ -1175,8 +1215,8 @@ class StrongReminderOverlayService : Service() {
             invalidate()
         }
 
-        fun setChargeProgress(value: Float) {
-            chargeProgress = value.coerceIn(0f, 1f)
+        fun setOrbitRotation(value: Float) {
+            orbitRotation = value
             invalidate()
         }
 
@@ -1198,241 +1238,133 @@ class StrongReminderOverlayService : Service() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val centerX = width / 2f
-            val centerY = height / 2f
-            val radius = minOf(width, height) / 2f
-            val energyPulse = when (holdState) {
+            val centerY = height * 0.42f
+            val ringRadius = minOf(width, height) * 0.315f
+            val statePulse = when (holdState) {
                 HoldState.IDLE -> ambientPulse
-                HoldState.CHARGING -> chargeProgress
+                HoldState.CHARGING -> progress
                 HoldState.CHARGED_WAITING_RELEASE -> chargedPulse
-                HoldState.COMPLETING -> 1f - completionProgress * 0.3f
+                HoldState.COMPLETING -> 1f - completionProgress * 0.22f
             }
-            val glowRadius = radius * (0.48f + energyPulse * 0.18f)
+
+            configurePaints()
+            drawHalo(canvas, centerX, centerY, ringRadius, statePulse)
+            drawEnergySlices(canvas, centerX, centerY, ringRadius)
+            drawRing(canvas, centerX, centerY, ringRadius)
+            drawTickMarks(canvas, centerX, centerY, ringRadius)
+            drawEnergySpokes(canvas, centerX, centerY, ringRadius)
+            drawOrbitSparks(canvas, centerX, centerY, ringRadius)
+            drawCoreGlyph(canvas, centerX, centerY, ringRadius)
+            drawCrossFlare(canvas, centerX, centerY, ringRadius)
+            drawBurst(canvas, centerX, centerY, ringRadius)
+            drawLabel(canvas, centerX, centerY, ringRadius)
+        }
+
+        private fun configurePaints() {
+            backgroundPaint.strokeWidth = dp(10f)
+            backgroundPaint.color = Color.argb(46, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+            progressPaint.strokeWidth = dp(12f)
+            progressPaint.color = accentColor
+            trailingPaint.strokeWidth = dp(7f)
+            trailingPaint.color = Color.argb(190, 255, 255, 255)
+            tickPaint.strokeWidth = dp(2f)
+            tickPaint.color = Color.WHITE
+            slicePaint.strokeWidth = dp(10f)
+            slicePaint.color = Color.argb(150, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+            spokePaint.strokeWidth = dp(3f)
+            spokePaint.color = Color.argb(170, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+            corePaint.color = Color.argb(180, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+            shellPaint.strokeWidth = dp(4f)
+            shellPaint.color = Color.argb(210, 255, 255, 255)
+            accentStrokePaint.strokeWidth = dp(5f)
+            accentStrokePaint.color = accentColor
+            burstPaint.strokeWidth = dp(4f)
+            burstPaint.color = Color.WHITE
+            flarePaint.strokeWidth = dp(2.6f)
+            flarePaint.color = Color.WHITE
+            labelStrokePaint.strokeWidth = dp(1.4f)
+            labelStrokePaint.color = Color.argb(88, 255, 255, 255)
+        }
+
+        private fun drawHalo(canvas: Canvas, centerX: Float, centerY: Float, radius: Float, statePulse: Float) {
+            val haloAlpha = when (holdState) {
+                HoldState.IDLE -> (54 + ambientPulse * 26).toInt()
+                HoldState.CHARGING -> (72 + progress * 56).toInt()
+                HoldState.CHARGED_WAITING_RELEASE -> (120 + chargedPulse * 72).toInt()
+                HoldState.COMPLETING -> (220 - completionProgress * 130).toInt()
+            }.coerceIn(44, 220)
+            val haloRadius = radius + dp(32f) + statePulse * dp(18f)
             glowPaint.color = Color.argb(
-                when (holdState) {
-                    HoldState.IDLE -> (72 + ambientPulse * 34).toInt()
-                    HoldState.CHARGING -> (90 + chargeProgress * 70).toInt()
-                    HoldState.CHARGED_WAITING_RELEASE -> (140 + chargedPulse * 70).toInt()
-                    HoldState.COMPLETING -> (220 - completionProgress * 120).toInt()
-                }.coerceIn(60, 220),
-                Color.red(glyphColor),
-                Color.green(glyphColor),
-                Color.blue(glyphColor)
+                haloAlpha,
+                Color.red(accentColor),
+                Color.green(accentColor),
+                Color.blue(accentColor)
             )
-            canvas.drawCircle(centerX, centerY, glowRadius, glowPaint)
+            canvas.drawCircle(centerX, centerY, haloRadius, glowPaint)
+        }
 
-            shellPaint.color = Color.argb(
-                when (holdState) {
-                    HoldState.IDLE -> 130
-                    HoldState.CHARGING -> (150 + chargeProgress * 60).toInt()
-                    HoldState.CHARGED_WAITING_RELEASE -> (200 + chargedPulse * 30).toInt()
-                    HoldState.COMPLETING -> (255 - completionProgress * 80).toInt()
-                }.coerceIn(110, 255),
-                255,
-                255,
-                255
+        private fun drawEnergySlices(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+            val sliceCount = when (holdState) {
+                HoldState.IDLE -> 0
+                HoldState.CHARGING -> 3
+                HoldState.CHARGED_WAITING_RELEASE -> 6
+                HoldState.COMPLETING -> 8
+            }
+            if (sliceCount == 0) return
+            val sliceAlpha = when (holdState) {
+                HoldState.CHARGING -> (70 + progress * 110).toInt()
+                HoldState.CHARGED_WAITING_RELEASE -> (150 + chargedPulse * 90).toInt()
+                HoldState.COMPLETING -> (230 - completionProgress * 150).toInt()
+                HoldState.IDLE -> 0
+            }.coerceIn(0, 240)
+            slicePaint.color = Color.argb(
+                sliceAlpha,
+                Color.red(accentColor),
+                Color.green(accentColor),
+                Color.blue(accentColor)
             )
-            accentStrokePaint.color = glyphColor
-            corePaint.color = Color.argb(
-                when (holdState) {
-                    HoldState.IDLE -> 180
-                    HoldState.CHARGING -> (190 + chargeProgress * 40).toInt()
-                    HoldState.CHARGED_WAITING_RELEASE -> (220 + chargedPulse * 25).toInt()
-                    HoldState.COMPLETING -> (255 - completionProgress * 60).toInt()
-                }.coerceIn(160, 255),
-                255,
-                255,
-                255
+            slicePaint.strokeWidth = when (holdState) {
+                HoldState.CHARGING -> dp(8f + progress * 3f)
+                HoldState.CHARGED_WAITING_RELEASE -> dp(12f + chargedPulse * 5f)
+                HoldState.COMPLETING -> dp(16f - completionProgress * 5f)
+                HoldState.IDLE -> dp(0f)
+            }
+            sliceRect.set(
+                centerX - radius - dp(18f),
+                centerY - radius - dp(18f),
+                centerX + radius + dp(18f),
+                centerY + radius + dp(18f)
             )
-            detailPaint.color = Color.argb(
-                when (holdState) {
-                    HoldState.IDLE -> 220
-                    HoldState.CHARGING -> 235
-                    HoldState.CHARGED_WAITING_RELEASE -> 255
-                    HoldState.COMPLETING -> 255
-                },
-                255,
-                255,
-                255
-            )
-
-            val innerRadius = radius * (0.16f + energyPulse * 0.025f)
-            val outerRadius = radius * (0.3f + energyPulse * 0.04f)
-            canvas.drawCircle(centerX, centerY, outerRadius, accentStrokePaint)
-            canvas.drawCircle(centerX, centerY, innerRadius, corePaint)
-
-            val signalInset = radius * 0.28f
-            arcRect.set(centerX - signalInset, centerY - signalInset, centerX + signalInset, centerY + signalInset)
-            arcRectOuter.set(
-                centerX - signalInset * 1.45f,
-                centerY - signalInset * 1.45f,
-                centerX + signalInset * 1.45f,
-                centerY + signalInset * 1.45f
-            )
-            canvas.drawArc(arcRect, 214f, 112f, false, shellPaint)
-            canvas.drawArc(arcRectOuter, 218f, 104f, false, shellPaint)
-            canvas.drawArc(arcRect, -146f, 112f, false, shellPaint)
-            canvas.drawArc(arcRectOuter, -142f, 104f, false, shellPaint)
-
-            val columnTop = centerY - radius * 0.26f
-            val columnBottom = centerY + radius * 0.06f
-            canvas.drawLine(centerX, columnTop, centerX, columnBottom, accentStrokePaint)
-            canvas.drawCircle(centerX, centerY + radius * 0.2f, radius * 0.055f * (1f + energyPulse * 0.35f), detailPaint)
-
-            if (holdState != HoldState.IDLE) {
-                val rayLength = radius * when (holdState) {
-                    HoldState.CHARGING -> 0.48f + chargeProgress * 0.12f
-                    HoldState.CHARGED_WAITING_RELEASE -> 0.58f + chargedPulse * 0.12f
-                    HoldState.COMPLETING -> 0.66f + completionProgress * 0.14f
-                    HoldState.IDLE -> 0f
-                }
-                val rayAlpha = when (holdState) {
-                    HoldState.CHARGING -> (90 + chargeProgress * 80).toInt()
-                    HoldState.CHARGED_WAITING_RELEASE -> (160 + chargedPulse * 70).toInt()
-                    HoldState.COMPLETING -> (240 - completionProgress * 120).toInt()
-                    HoldState.IDLE -> 0
-                }.coerceIn(0, 255)
-                shellPaint.color = Color.argb(rayAlpha, 255, 255, 255)
-                canvas.drawLine(centerX - rayLength, centerY, centerX + rayLength, centerY, shellPaint)
-                canvas.drawLine(centerX, centerY - rayLength, centerX, centerY + rayLength, shellPaint)
+            val sweep = when (holdState) {
+                HoldState.CHARGING -> 20f + progress * 18f
+                HoldState.CHARGED_WAITING_RELEASE -> 28f + chargedPulse * 18f
+                HoldState.COMPLETING -> 34f - completionProgress * 10f
+                HoldState.IDLE -> 0f
+            }
+            for (i in 0 until sliceCount) {
+                val start = orbitRotation * 0.9f + i * (360f / sliceCount) - 90f
+                canvas.drawArc(sliceRect, start, sweep, false, slicePaint)
             }
         }
 
-        private fun dp(value: Float): Float {
-            return value * resources.displayMetrics.density
-        }
-    }
-
-    // 环形进度自定义视图
-    inner class RingProgressView(context: Context) : View(context) {
-        private var progress: Float = 0f
-        private var ringColor: Int = accentColor
-        private var orbitRotation: Float = 0f
-        private var ambientPulse: Float = 0f
-        private var chargedPulse: Float = 0f
-        private var burstProgress: Float = 0f
-        private var holdState: HoldState = HoldState.IDLE
-
-        private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(10f)
-            color = Color.argb(42, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-            strokeCap = Cap.ROUND
-        }
-        private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(12f)
-            color = ringColor
-            strokeCap = Cap.ROUND
-        }
-        private val trailingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(6f)
-            color = Color.WHITE
-            strokeCap = Cap.ROUND
-        }
-        private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(2f)
-            color = Color.argb(110, 255, 255, 255)
-            strokeCap = Cap.ROUND
-        }
-        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.FILL
-            color = Color.argb(38, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-        }
-        private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.FILL
-            color = Color.argb(180, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-        }
-        private val sparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.FILL
-            color = Color.WHITE
-        }
-        private val burstPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(4f)
-            color = Color.WHITE
-            strokeCap = Cap.ROUND
-        }
-        private val spokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(3f)
-            color = Color.WHITE
-            strokeCap = Cap.ROUND
-        }
-        private val flarePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Style.STROKE
-            strokeWidth = dp(2.5f)
-            color = Color.WHITE
-            strokeCap = Cap.ROUND
-        }
-
-        fun setProgress(value: Float) {
-            progress = value.coerceIn(0f, 1f)
-            invalidate()
-        }
-
-        fun setAccentColor(color: Int) {
-            ringColor = color
-            progressPaint.color = color
-            backgroundPaint.color = Color.argb(42, Color.red(color), Color.green(color), Color.blue(color))
-            trailingPaint.color = Color.argb(185, 255, 255, 255)
-            glowPaint.color = Color.argb(38, Color.red(color), Color.green(color), Color.blue(color))
-            corePaint.color = Color.argb(180, Color.red(color), Color.green(color), Color.blue(color))
-            spokePaint.color = Color.argb(170, Color.red(color), Color.green(color), Color.blue(color))
-            invalidate()
-        }
-
-        fun setOrbitRotation(value: Float) {
-            orbitRotation = value
-            invalidate()
-        }
-
-        fun setAmbientPulse(value: Float) {
-            ambientPulse = value.coerceIn(0f, 1f)
-            invalidate()
-        }
-
-        fun setChargedPulse(value: Float) {
-            chargedPulse = value.coerceIn(0f, 1f)
-            invalidate()
-        }
-
-        fun setBurstProgress(value: Float) {
-            burstProgress = value.coerceIn(0f, 1f)
-            invalidate()
-        }
-
-        fun setHoldState(value: HoldState) {
-            holdState = value
-            invalidate()
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val centerX = width / 2f
-            val centerY = height / 2f
-            val radius = (minOf(width, height) - progressPaint.strokeWidth) / 2f - dp(6f)
-            val glowRadius = radius + dp(24f) + chargedPulse * dp(14f)
-
-            glowPaint.alpha = (42 + ambientPulse * 22 + chargedPulse * 66).toInt().coerceAtMost(180)
-            canvas.drawCircle(centerX, centerY, glowRadius, glowPaint)
+        private fun drawRing(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+            ringRect.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
             canvas.drawCircle(centerX, centerY, radius + dp(10f), backgroundPaint)
-            drawTickMarks(canvas, centerX, centerY, radius + dp(15f))
-            drawEnergySpokes(canvas, centerX, centerY, radius)
-
-            val rect = RectF(
-                centerX - radius,
-                centerY - radius,
-                centerX + radius,
-                centerY + radius
-            )
-            canvas.drawArc(rect, -90f, 360f * progress, false, progressPaint)
-            drawTrailingArc(canvas, rect)
-            drawOrbitSparks(canvas, centerX, centerY, radius + dp(6f))
-            drawCore(canvas, centerX, centerY, radius * 0.48f)
-            drawCrossFlare(canvas, centerX, centerY, radius)
-            drawBurst(canvas, centerX, centerY, radius)
+            if (progress > 0f) {
+                canvas.drawArc(ringRect, -90f, 360f * progress, false, progressPaint)
+                val sweep = 44f + progress * 42f
+                trailingPaint.alpha = (86 + progress * 110).toInt().coerceAtMost(220)
+                canvas.drawArc(ringRect, -90f + (360f * progress) - sweep, sweep, false, trailingPaint)
+            }
+            if (holdState == HoldState.CHARGED_WAITING_RELEASE || holdState == HoldState.COMPLETING) {
+                trailingPaint.alpha = when (holdState) {
+                    HoldState.CHARGED_WAITING_RELEASE -> (130 + chargedPulse * 90).toInt()
+                    HoldState.COMPLETING -> (200 - completionProgress * 120).toInt()
+                    else -> 0
+                }.coerceIn(0, 230)
+                canvas.drawArc(ringRect, orbitRotation - 114f, 84f, false, trailingPaint)
+                canvas.drawArc(ringRect, -orbitRotation - 44f, 48f, false, trailingPaint)
+            }
         }
 
         private fun drawTickMarks(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
@@ -1442,51 +1374,19 @@ class StrongReminderOverlayService : Service() {
                 val isActive = progress >= markProgress
                 val alpha = when {
                     holdState == HoldState.CHARGED_WAITING_RELEASE -> (120 + chargedPulse * 110).toInt()
-                    holdState == HoldState.COMPLETING -> (200 - burstProgress * 120).toInt()
+                    holdState == HoldState.COMPLETING -> (200 - completionProgress * 120).toInt()
                     isActive -> 170
-                    else -> 42
+                    else -> 40
                 }.coerceIn(24, 220)
-                glyphPaint.color = Color.argb(alpha, 255, 255, 255)
+                tickPaint.color = Color.argb(alpha, 255, 255, 255)
                 val angle = Math.toRadians((i * (360.0 / totalMarks) - 90.0) + orbitRotation * 0.04)
-                val inner = radius - if (i % 4 == 0) dp(12f) else dp(7f)
-                val outer = radius + if (i % 4 == 0) dp(2f) else dp(0.5f)
+                val inner = radius + if (i % 4 == 0) dp(6f) else dp(10f)
+                val outer = radius + if (i % 4 == 0) dp(18f) else dp(14f)
                 val startX = centerX + cos(angle).toFloat() * inner
                 val startY = centerY + sin(angle).toFloat() * inner
                 val endX = centerX + cos(angle).toFloat() * outer
                 val endY = centerY + sin(angle).toFloat() * outer
-                canvas.drawLine(startX, startY, endX, endY, glyphPaint)
-            }
-        }
-
-        private fun drawTrailingArc(canvas: Canvas, rect: RectF) {
-            if (progress <= 0f) return
-            val sweep = 48f + progress * 38f
-            trailingPaint.alpha = (80 + progress * 110).toInt().coerceAtMost(190)
-            canvas.drawArc(rect, -90f + (360f * progress) - sweep, sweep, false, trailingPaint)
-            if (holdState == HoldState.CHARGED_WAITING_RELEASE) {
-                trailingPaint.alpha = (120 + chargedPulse * 90).toInt().coerceAtMost(220)
-                canvas.drawArc(rect, orbitRotation - 110f, 76f, false, trailingPaint)
-                canvas.drawArc(rect, -orbitRotation - 40f, 44f, false, trailingPaint)
-            }
-        }
-
-        private fun drawOrbitSparks(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
-            val sparkCount = if (holdState == HoldState.CHARGED_WAITING_RELEASE) 8 else 5
-            for (i in 0 until sparkCount) {
-                val angleDegrees = orbitRotation + i * (360f / sparkCount)
-                val angle = Math.toRadians(angleDegrees.toDouble())
-                val sparkRadius = radius + if (i % 2 == 0) dp(6f) else dp(13f)
-                val x = centerX + cos(angle).toFloat() * sparkRadius
-                val y = centerY + sin(angle).toFloat() * sparkRadius
-                val size = if (holdState == HoldState.CHARGED_WAITING_RELEASE) dp(4f + chargedPulse * 3f) else dp(3f + progress * 2f)
-                val alpha = when (holdState) {
-                    HoldState.CHARGING -> (90 + progress * 120).toInt()
-                    HoldState.CHARGED_WAITING_RELEASE -> (150 + chargedPulse * 90).toInt()
-                    HoldState.COMPLETING -> (220 - burstProgress * 140).toInt()
-                    HoldState.IDLE -> (70 + ambientPulse * 60).toInt()
-                }.coerceIn(50, 230)
-                sparkPaint.color = Color.argb(alpha, 255, 255, 255)
-                canvas.drawCircle(x, y, size, sparkPaint)
+                canvas.drawLine(startX, startY, endX, endY, tickPaint)
             }
         }
 
@@ -1501,20 +1401,20 @@ class StrongReminderOverlayService : Service() {
             val lineAlpha = when (holdState) {
                 HoldState.CHARGING -> (55 + progress * 100).toInt()
                 HoldState.CHARGED_WAITING_RELEASE -> (120 + chargedPulse * 90).toInt()
-                HoldState.COMPLETING -> (210 - burstProgress * 130).toInt()
+                HoldState.COMPLETING -> (210 - completionProgress * 130).toInt()
                 HoldState.IDLE -> 0
             }.coerceIn(0, 230)
             spokePaint.color = Color.argb(
                 lineAlpha,
-                Color.red(ringColor),
-                Color.green(ringColor),
-                Color.blue(ringColor)
+                Color.red(accentColor),
+                Color.green(accentColor),
+                Color.blue(accentColor)
             )
             spokePaint.strokeWidth = when (holdState) {
                 HoldState.CHARGING -> dp(2.2f + progress * 1.2f)
                 HoldState.CHARGED_WAITING_RELEASE -> dp(3.2f + chargedPulse * 1.4f)
-                HoldState.COMPLETING -> dp(4.1f - burstProgress * 1.6f)
-                HoldState.IDLE -> dp(2f)
+                HoldState.COMPLETING -> dp(4.1f - completionProgress * 1.6f)
+                HoldState.IDLE -> dp(0f)
             }
             for (i in 0 until spokeCount) {
                 val angle = Math.toRadians((orbitRotation * 0.75f + i * (360.0 / spokeCount)) - 90.0)
@@ -1523,7 +1423,7 @@ class StrongReminderOverlayService : Service() {
                     when (holdState) {
                         HoldState.CHARGING -> 12f + progress * 10f
                         HoldState.CHARGED_WAITING_RELEASE -> 18f + chargedPulse * 16f
-                        HoldState.COMPLETING -> 22f + burstProgress * 22f
+                        HoldState.COMPLETING -> 22f + completionProgress * 22f
                         HoldState.IDLE -> 0f
                     }
                 )
@@ -1535,28 +1435,116 @@ class StrongReminderOverlayService : Service() {
             }
         }
 
-        private fun drawCore(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+        private fun drawOrbitSparks(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+            val sparkCount = when (holdState) {
+                HoldState.CHARGED_WAITING_RELEASE -> 8
+                HoldState.COMPLETING -> 10
+                else -> 5
+            }
+            for (i in 0 until sparkCount) {
+                val angleDegrees = orbitRotation + i * (360f / sparkCount)
+                val angle = Math.toRadians(angleDegrees.toDouble())
+                val sparkRadius = radius + if (i % 2 == 0) dp(10f) else dp(18f)
+                val x = centerX + cos(angle).toFloat() * sparkRadius
+                val y = centerY + sin(angle).toFloat() * sparkRadius
+                val size = when (holdState) {
+                    HoldState.CHARGED_WAITING_RELEASE -> dp(4f + chargedPulse * 3f)
+                    HoldState.COMPLETING -> dp(4.5f + (1f - completionProgress) * 3.5f)
+                    else -> dp(3f + progress * 2f)
+                }
+                val alpha = when (holdState) {
+                    HoldState.CHARGING -> (90 + progress * 120).toInt()
+                    HoldState.CHARGED_WAITING_RELEASE -> (150 + chargedPulse * 90).toInt()
+                    HoldState.COMPLETING -> (230 - completionProgress * 140).toInt()
+                    HoldState.IDLE -> (70 + ambientPulse * 60).toInt()
+                }.coerceIn(50, 235)
+                sparkPaint.color = Color.argb(alpha, 255, 255, 255)
+                canvas.drawCircle(x, y, size, sparkPaint)
+            }
+        }
+
+        private fun drawCoreGlyph(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+            val glyphRadius = radius * 0.46f
             val pulseScale = when (holdState) {
-                HoldState.IDLE -> 0.88f + ambientPulse * 0.08f
-                HoldState.CHARGING -> 0.9f + progress * 0.15f + ambientPulse * 0.05f
+                HoldState.IDLE -> 0.9f + ambientPulse * 0.08f
+                HoldState.CHARGING -> 0.92f + progress * 0.15f + ambientPulse * 0.04f
                 HoldState.CHARGED_WAITING_RELEASE -> 1f + chargedPulse * 0.12f
-                HoldState.COMPLETING -> 1.08f + burstProgress * 0.22f
+                HoldState.COMPLETING -> 1.05f + (1f - completionProgress) * 0.16f
             }
             corePaint.alpha = when (holdState) {
-                HoldState.IDLE -> 110
-                HoldState.CHARGING -> (130 + progress * 70).toInt()
-                HoldState.CHARGED_WAITING_RELEASE -> (170 + chargedPulse * 60).toInt()
-                HoldState.COMPLETING -> (210 - burstProgress * 110).toInt()
-            }.coerceIn(96, 220)
-            canvas.drawCircle(centerX, centerY, radius * pulseScale, corePaint)
+                HoldState.IDLE -> 114
+                HoldState.CHARGING -> (136 + progress * 74).toInt()
+                HoldState.CHARGED_WAITING_RELEASE -> (176 + chargedPulse * 60).toInt()
+                HoldState.COMPLETING -> (255 - completionProgress * 90).toInt()
+            }.coerceIn(96, 255)
+            canvas.drawCircle(centerX, centerY, glyphRadius * pulseScale, corePaint)
 
-            sparkPaint.color = Color.argb(
-                if (holdState == HoldState.COMPLETING) 255 else 200,
+            val outerRadius = glyphRadius * (1.04f + when (holdState) {
+                HoldState.IDLE -> ambientPulse * 0.06f
+                HoldState.CHARGING -> progress * 0.08f
+                HoldState.CHARGED_WAITING_RELEASE -> chargedPulse * 0.12f
+                HoldState.COMPLETING -> (1f - completionProgress) * 0.16f
+            })
+            canvas.drawCircle(centerX, centerY, outerRadius, accentStrokePaint)
+
+            shellPaint.color = Color.argb(
+                when (holdState) {
+                    HoldState.IDLE -> 138
+                    HoldState.CHARGING -> (160 + progress * 55).toInt()
+                    HoldState.CHARGED_WAITING_RELEASE -> (210 + chargedPulse * 30).toInt()
+                    HoldState.COMPLETING -> (255 - completionProgress * 70).toInt()
+                }.coerceIn(120, 255),
                 255,
                 255,
                 255
             )
-            canvas.drawCircle(centerX, centerY, radius * 0.35f * (0.96f + ambientPulse * 0.04f), sparkPaint)
+            innerArcRect.set(
+                centerX - glyphRadius * 0.88f,
+                centerY - glyphRadius * 0.88f,
+                centerX + glyphRadius * 0.88f,
+                centerY + glyphRadius * 0.88f
+            )
+            outerArcRect.set(
+                centerX - glyphRadius * 1.26f,
+                centerY - glyphRadius * 1.26f,
+                centerX + glyphRadius * 1.26f,
+                centerY + glyphRadius * 1.26f
+            )
+            canvas.drawArc(innerArcRect, 214f, 112f, false, shellPaint)
+            canvas.drawArc(outerArcRect, 218f, 104f, false, shellPaint)
+            canvas.drawArc(innerArcRect, -146f, 112f, false, shellPaint)
+            canvas.drawArc(outerArcRect, -142f, 104f, false, shellPaint)
+
+            detailPaint.color = Color.argb(
+                if (holdState == HoldState.COMPLETING) 255 else 230,
+                255,
+                255,
+                255
+            )
+            canvas.drawLine(centerX, centerY - glyphRadius * 0.68f, centerX, centerY + glyphRadius * 0.16f, accentStrokePaint)
+            canvas.drawCircle(centerX, centerY + glyphRadius * 0.48f, glyphRadius * 0.16f, detailPaint)
+
+            if (holdState != HoldState.IDLE) {
+                val rayLength = glyphRadius * when (holdState) {
+                    HoldState.CHARGING -> 1.5f + progress * 0.2f
+                    HoldState.CHARGED_WAITING_RELEASE -> 1.7f + chargedPulse * 0.24f
+                    HoldState.COMPLETING -> 1.85f + (1f - completionProgress) * 0.22f
+                    HoldState.IDLE -> 0f
+                }
+                shellPaint.color = Color.argb(
+                    when (holdState) {
+                        HoldState.CHARGING -> (92 + progress * 82).toInt()
+                        HoldState.CHARGED_WAITING_RELEASE -> (165 + chargedPulse * 72).toInt()
+                        HoldState.COMPLETING -> (245 - completionProgress * 130).toInt()
+                        HoldState.IDLE -> 0
+                    }.coerceIn(0, 255),
+                    255,
+                    255,
+                    255
+                )
+                canvas.drawLine(centerX - rayLength, centerY, centerX + rayLength, centerY, shellPaint)
+                canvas.drawLine(centerX, centerY - rayLength, centerX, centerY + rayLength, shellPaint)
+            }
         }
 
         private fun drawCrossFlare(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
@@ -1564,40 +1552,107 @@ class StrongReminderOverlayService : Service() {
             flarePaint.alpha = when (holdState) {
                 HoldState.CHARGING -> (75 + progress * 90).toInt()
                 HoldState.CHARGED_WAITING_RELEASE -> (165 + chargedPulse * 60).toInt()
-                HoldState.COMPLETING -> (255 - burstProgress * 150).toInt()
+                HoldState.COMPLETING -> (255 - completionProgress * 150).toInt()
                 HoldState.IDLE -> 0
             }.coerceIn(0, 255)
             flarePaint.strokeWidth = when (holdState) {
                 HoldState.CHARGING -> dp(1.8f + progress * 0.8f)
                 HoldState.CHARGED_WAITING_RELEASE -> dp(2.8f + chargedPulse * 1.2f)
-                HoldState.COMPLETING -> dp(3.8f - burstProgress * 1.4f)
+                HoldState.COMPLETING -> dp(4f - completionProgress * 1.5f)
                 HoldState.IDLE -> dp(0f)
             }
             val crossRadius = radius * when (holdState) {
                 HoldState.CHARGING -> 0.44f + progress * 0.08f
                 HoldState.CHARGED_WAITING_RELEASE -> 0.5f + chargedPulse * 0.08f
-                HoldState.COMPLETING -> 0.56f + burstProgress * 0.12f
+                HoldState.COMPLETING -> 0.58f + (1f - completionProgress) * 0.1f
                 HoldState.IDLE -> 0f
             }
             canvas.drawLine(centerX - crossRadius, centerY, centerX + crossRadius, centerY, flarePaint)
             canvas.drawLine(centerX, centerY - crossRadius, centerX, centerY + crossRadius, flarePaint)
             if (holdState != HoldState.CHARGING) {
                 val diagAngle = Math.toRadians((orbitRotation * 0.5f).toDouble())
-                val dx = cos(diagAngle).toFloat() * crossRadius * 0.8f
-                val dy = sin(diagAngle).toFloat() * crossRadius * 0.8f
+                val dx = cos(diagAngle).toFloat() * crossRadius * 0.82f
+                val dy = sin(diagAngle).toFloat() * crossRadius * 0.82f
                 canvas.drawLine(centerX - dx, centerY - dy, centerX + dx, centerY + dy, flarePaint)
                 canvas.drawLine(centerX - dy, centerY + dx, centerX + dy, centerY - dx, flarePaint)
             }
         }
 
         private fun drawBurst(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
-            if (burstProgress <= 0f) return
-            burstPaint.alpha = (220 - burstProgress * 180).toInt().coerceAtLeast(0)
-            val firstRadius = radius + dp(10f) + burstProgress * dp(90f)
-            val secondRadius = radius + dp(2f) + burstProgress * dp(150f)
+            if (holdState != HoldState.COMPLETING && completionProgress <= 0f) return
+            val flashProgress = if (completionProgress < 0.24f) completionProgress / 0.24f else 1f - ((completionProgress - 0.24f) / 0.76f)
+            val flashAlpha = (flashProgress.coerceIn(0f, 1f) * 180).toInt()
+            sparkPaint.color = Color.argb(flashAlpha, 255, 255, 255)
+            canvas.drawCircle(centerX, centerY, radius * (0.36f + flashProgress * 0.2f), sparkPaint)
+
+            burstPaint.alpha = (225 - completionProgress * 180).toInt().coerceAtLeast(0)
+            val firstRadius = radius + dp(12f) + completionProgress * dp(96f)
+            val secondRadius = radius + dp(4f) + completionProgress * dp(154f)
             canvas.drawCircle(centerX, centerY, firstRadius, burstPaint)
-            burstPaint.alpha = (160 - burstProgress * 140).toInt().coerceAtLeast(0)
+            burstPaint.alpha = (165 - completionProgress * 140).toInt().coerceAtLeast(0)
             canvas.drawCircle(centerX, centerY, secondRadius, burstPaint)
+
+            flarePaint.alpha = (220 - completionProgress * 180).toInt().coerceAtLeast(0)
+            flarePaint.strokeWidth = dp(3.4f)
+            val shardCount = 12
+            val inner = radius * 0.76f
+            val outer = radius + dp(28f) + completionProgress * dp(118f)
+            for (i in 0 until shardCount) {
+                val angle = Math.toRadians((orbitRotation * 0.35f + i * (360.0 / shardCount) - 90.0))
+                val startX = centerX + cos(angle).toFloat() * inner
+                val startY = centerY + sin(angle).toFloat() * inner
+                val endX = centerX + cos(angle).toFloat() * outer
+                val endY = centerY + sin(angle).toFloat() * outer
+                canvas.drawLine(startX, startY, endX, endY, flarePaint)
+            }
+        }
+
+        private fun drawLabel(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+            val label = when (holdState) {
+                HoldState.IDLE -> "长按确认"
+                HoldState.CHARGING -> "保持按住"
+                HoldState.CHARGED_WAITING_RELEASE -> "松手确认"
+                HoldState.COMPLETING -> "已完成"
+            }
+            val labelTop = centerY + radius + dp(22f)
+            val labelBottom = labelTop + dp(32f)
+            labelRect.set(centerX - dp(84f), labelTop, centerX + dp(84f), labelBottom)
+            val pillAlpha = when (holdState) {
+                HoldState.IDLE -> (24 + ambientPulse * 18).toInt()
+                HoldState.CHARGING -> (54 + progress * 44).toInt()
+                HoldState.CHARGED_WAITING_RELEASE -> (110 + chargedPulse * 70).toInt()
+                HoldState.COMPLETING -> (170 - completionProgress * 90).toInt()
+            }.coerceIn(18, 200)
+            labelFillPaint.color = Color.argb(
+                pillAlpha,
+                Color.red(accentColor),
+                Color.green(accentColor),
+                Color.blue(accentColor)
+            )
+            canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelFillPaint)
+            canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelStrokePaint)
+
+            textPaint.color = Color.argb(
+                when (holdState) {
+                    HoldState.IDLE -> 228
+                    HoldState.CHARGING -> 238
+                    HoldState.CHARGED_WAITING_RELEASE -> 255
+                    HoldState.COMPLETING -> (255 - completionProgress * 70).toInt()
+                }.coerceIn(180, 255),
+                255,
+                255,
+                255
+            )
+            textPaint.textSize = dp(
+                when (holdState) {
+                    HoldState.IDLE -> 16f + ambientPulse * 0.4f
+                    HoldState.CHARGING -> 16.4f + progress * 1.2f
+                    HoldState.CHARGED_WAITING_RELEASE -> 17.2f + chargedPulse * 1.3f
+                    HoldState.COMPLETING -> 17.8f + (1f - completionProgress) * 1.4f
+                }
+            )
+            val baseline = labelRect.centerY() - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
+            canvas.drawText(label, centerX, baseline, textPaint)
         }
 
         private fun dp(value: Float): Float {
