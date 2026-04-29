@@ -6,8 +6,10 @@ import android.view.animation.LinearInterpolator
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Canvas
 import android.graphics.Color
@@ -40,6 +42,7 @@ import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.PendingOverlayManager
+import com.ducktask.app.util.PendingOverlayPayload
 import com.ducktask.app.util.PermissionUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,8 +65,22 @@ class StrongReminderOverlayService : Service() {
     private var holdRunnable: Runnable? = null
     private var dismissing = false
     private var currentTaskId: String = ""
+    private var currentEvent: String = ""
+    private var currentDescription: String = ""
     private var currentLogId: Long = -1L
     private var currentNotificationId: Int = -1
+    private var isWaitingForUnlock = false
+    private var unlockReceiver: BroadcastReceiver? = null
+    private var unlockPollAttemptsRemaining = 0
+    private var unlockPollIntervalMs = 500L
+    private val unlockCheckRunnable = Runnable {
+        if (!isWaitingForUnlock) return@Runnable
+        val shown = maybeShowDeferredOverlay("unlock_poll")
+        if (!shown && unlockPollAttemptsRemaining > 0) {
+            unlockPollAttemptsRemaining -= 1
+            mainHandler.postDelayed(unlockCheckRunnable, unlockPollIntervalMs)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -84,22 +101,33 @@ class StrongReminderOverlayService : Service() {
         val event = intent.getStringExtra(EXTRA_EVENT).orEmpty().ifBlank { "DuckTask 提醒" }
         val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
         currentTaskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
+        currentEvent = event
+        currentDescription = description
         currentLogId = intent.getLongExtra(EXTRA_LOG_ID, -1L)
         currentNotificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, event.hashCode())
         dismissing = false
+        val waitForUnlock = PermissionUtils.isDeviceLocked(this)
 
         ServiceCompat.startForeground(
             this,
             currentNotificationId,
             buildForegroundNotification(event, description),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+            foregroundServiceType(waitForUnlock)
         )
-        showOverlay(event, description)
+
+        if (waitForUnlock) {
+            armDeferredOverlay(event)
+        } else {
+            isWaitingForUnlock = false
+            unregisterUnlockReceiverIfNeeded()
+            showOverlay(event, description)
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        unregisterUnlockReceiverIfNeeded()
         removeOverlay()
         super.onDestroy()
     }
@@ -179,6 +207,78 @@ class StrongReminderOverlayService : Service() {
 
         // 创建环形按钮
         createRingButton()
+    }
+
+    private fun armDeferredOverlay(event: String) {
+        removeOverlay()
+        isWaitingForUnlock = true
+        registerUnlockReceiverIfNeeded()
+        startUnlockPolling(attempts = 6, intervalMs = 750L)
+        AppLogger.info("StrongReminderOverlay", "Device locked, waiting for unlock for: $event")
+    }
+
+    private fun maybeShowDeferredOverlay(source: String): Boolean {
+        if (!isWaitingForUnlock) return false
+        if (!PermissionUtils.canDrawOverlay(this)) {
+            AppLogger.info("StrongReminderOverlay", "Overlay permission missing while waiting for unlock")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return false
+        }
+        if (PermissionUtils.isDeviceLocked(this)) {
+            if (source != "unlock_poll") {
+                AppLogger.info(
+                    "StrongReminderOverlay",
+                    "Received $source but device is still locked for: $currentEvent"
+                )
+            }
+            return false
+        }
+
+        isWaitingForUnlock = false
+        unregisterUnlockReceiverIfNeeded()
+        AppLogger.info("StrongReminderOverlay", "Unlock detected via $source, showing overlay for: $currentEvent")
+        showOverlay(currentEvent, currentDescription)
+        return true
+    }
+
+    private fun startUnlockPolling(attempts: Int, intervalMs: Long) {
+        unlockPollAttemptsRemaining = attempts
+        unlockPollIntervalMs = intervalMs
+        mainHandler.removeCallbacks(unlockCheckRunnable)
+        mainHandler.postDelayed(unlockCheckRunnable, intervalMs)
+    }
+
+    private fun registerUnlockReceiverIfNeeded() {
+        if (unlockReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_USER_PRESENT -> maybeShowDeferredOverlay("user_present")
+                    Intent.ACTION_SCREEN_ON -> startUnlockPolling(attempts = 20, intervalMs = 300L)
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
+        unlockReceiver = receiver
+    }
+
+    private fun unregisterUnlockReceiverIfNeeded() {
+        mainHandler.removeCallbacks(unlockCheckRunnable)
+        unlockPollAttemptsRemaining = 0
+        unlockReceiver?.let { receiver ->
+            runCatching { unregisterReceiver(receiver) }
+        }
+        unlockReceiver = null
     }
 
     private fun createRingButton() {
@@ -542,14 +642,42 @@ class StrongReminderOverlayService : Service() {
         const val EXTRA_NOTIFICATION_ID = "notification_id"
 
         fun startIfPossible(context: Context, task: Task, logId: Long): Boolean {
-            if (!PermissionUtils.canDrawOverlay(context) || PermissionUtils.isDeviceLocked(context)) {
+            return startService(
+                context = context,
+                taskId = task.taskId,
+                event = task.event,
+                description = task.description,
+                logId = logId,
+                notificationId = task.taskId.hashCode()
+            )
+        }
+
+        fun startPendingIfPossible(context: Context, pending: PendingOverlayPayload): Boolean {
+            return startService(
+                context = context,
+                taskId = pending.taskId,
+                event = pending.event,
+                description = pending.description,
+                logId = pending.logId,
+                notificationId = pending.notificationId
+            )
+        }
+
+        private fun startService(
+            context: Context,
+            taskId: String,
+            event: String,
+            description: String,
+            logId: Long,
+            notificationId: Int
+        ): Boolean {
+            if (!PermissionUtils.canDrawOverlay(context)) {
                 return false
             }
-            val notificationId = task.taskId.hashCode()
             val intent = Intent(context, StrongReminderOverlayService::class.java)
-                .putExtra(EXTRA_TASK_ID, task.taskId)
-                .putExtra(EXTRA_EVENT, task.event)
-                .putExtra(EXTRA_DESCRIPTION, task.description)
+                .putExtra(EXTRA_TASK_ID, taskId)
+                .putExtra(EXTRA_EVENT, event)
+                .putExtra(EXTRA_DESCRIPTION, description)
                 .putExtra(EXTRA_LOG_ID, logId)
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
             return runCatching {
@@ -559,6 +687,18 @@ class StrongReminderOverlayService : Service() {
             }.onFailure {
                 AppLogger.error("StrongReminderOverlay", "Failed to start overlay service", it)
             }.getOrDefault(false)
+        }
+
+        private fun foregroundServiceType(waitForUnlock: Boolean): Int {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                if (waitForUnlock) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                }
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
+            }
         }
     }
 }

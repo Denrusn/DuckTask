@@ -51,20 +51,29 @@ class AlarmReceiver : BroadcastReceiver() {
                     DuckTaskNotifications.showReminder(appContext, task, nextRunTime, logId)
                     // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (PermissionUtils.canDrawOverlay(appContext) && !PermissionUtils.isDeviceLocked(appContext)) {
-                            // 设备未锁屏，直接显示悬浮窗
-                            StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
+                        if (!PermissionUtils.canDrawOverlay(appContext)) {
+                            AppLogger.info("AlarmReceiver", "Overlay permission missing, skip strong overlay for: ${task.event}")
                         } else {
-                            // 设备锁屏，保存待显示状态，等解锁后显示
-                            PendingOverlayManager.savePending(
-                                appContext,
-                                task.taskId,
-                                task.event,
-                                task.description,
-                                logId,
-                                task.taskId.hashCode()
-                            )
-                            AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                            val deviceLocked = PermissionUtils.isDeviceLocked(appContext)
+                            if (deviceLocked) {
+                                // 设备锁屏，保存待显示状态，并由前台服务守候到解锁
+                                PendingOverlayManager.savePending(
+                                    appContext,
+                                    task.taskId,
+                                    task.event,
+                                    task.description,
+                                    logId,
+                                    task.taskId.hashCode()
+                                )
+                                AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                            }
+                            val started = StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
+                            if (!started) {
+                                AppLogger.info(
+                                    "AlarmReceiver",
+                                    "Failed to start strong overlay service for: ${task.event}"
+                                )
+                            }
                         }
                     }
                 } else {
@@ -81,20 +90,29 @@ class AlarmReceiver : BroadcastReceiver() {
                     DuckTaskNotifications.showReminder(appContext, task, null, logId)
                     // STRONG 模式：仅通过悬浮窗提醒
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (PermissionUtils.canDrawOverlay(appContext) && !PermissionUtils.isDeviceLocked(appContext)) {
-                            // 设备未锁屏，直接显示悬浮窗
-                            StrongReminderOverlayService.startIfPossible(appContext, task, logId)
+                        if (!PermissionUtils.canDrawOverlay(appContext)) {
+                            AppLogger.info("AlarmReceiver", "Overlay permission missing, skip strong overlay for: ${task.event}")
                         } else {
-                            // 设备锁屏，保存待显示状态，等解锁后显示
-                            PendingOverlayManager.savePending(
-                                appContext,
-                                task.taskId,
-                                task.event,
-                                task.description,
-                                logId,
-                                task.taskId.hashCode()
-                            )
-                            AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                            val deviceLocked = PermissionUtils.isDeviceLocked(appContext)
+                            if (deviceLocked) {
+                                // 设备锁屏，保存待显示状态，并由前台服务守候到解锁
+                                PendingOverlayManager.savePending(
+                                    appContext,
+                                    task.taskId,
+                                    task.event,
+                                    task.description,
+                                    logId,
+                                    task.taskId.hashCode()
+                                )
+                                AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
+                            }
+                            val started = StrongReminderOverlayService.startIfPossible(appContext, task, logId)
+                            if (!started) {
+                                AppLogger.info(
+                                    "AlarmReceiver",
+                                    "Failed to start strong overlay service for: ${task.event}"
+                                )
+                            }
                         }
                     }
                 }

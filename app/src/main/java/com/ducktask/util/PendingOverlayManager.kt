@@ -5,7 +5,7 @@ import android.content.Context
 /**
  * 管理待显示的强提醒悬浮窗
  * 当设备锁屏时，闹钟触发后提醒会存入这里
- * 解锁后，DeviceUnlockReceiver 会读取并显示
+ * 解锁后，由强提醒前台服务或兜底恢复逻辑读取并显示
  */
 object PendingOverlayManager {
     private const val PREFS_NAME = "pending_overlay"
