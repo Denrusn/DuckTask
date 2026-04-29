@@ -34,7 +34,7 @@ class PendingOverlayRecoveryCoordinatorTest {
         assertSame(pending, result.pending)
         assertSame(pending, startedWith)
         assertEquals("task-1" to 42L, store.clearedMatch)
-        assertNull(store.pending)
+        assertNull(store.storedPending)
     }
 
     @Test
@@ -56,7 +56,7 @@ class PendingOverlayRecoveryCoordinatorTest {
         assertSame(pending, result.pending)
         assertFalse(starterCalled)
         assertNull(store.clearedMatch)
-        assertSame(pending, store.pending)
+        assertSame(pending, store.storedPending)
     }
 
     @Test
@@ -73,7 +73,7 @@ class PendingOverlayRecoveryCoordinatorTest {
         assertEquals(PendingOverlayRecoveryCoordinator.RecoveryStatus.START_FAILED, result.status)
         assertSame(pending, result.pending)
         assertNull(store.clearedMatch)
-        assertSame(pending, store.pending)
+        assertSame(pending, store.storedPending)
     }
 
     @Test
@@ -95,21 +95,21 @@ class PendingOverlayRecoveryCoordinatorTest {
         assertNull(result.pending)
         assertFalse(starterCalled)
         assertNull(store.clearedMatch)
-        assertNull(store.pending)
+        assertNull(store.storedPending)
     }
 
     private class FakePendingOverlayStore(
         initialPending: PendingOverlayPayload? = null
     ) : PendingOverlayRecoveryCoordinator.PendingOverlayStore {
-        var pending: PendingOverlayPayload? = initialPending
+        var storedPending: PendingOverlayPayload? = initialPending
         var clearedMatch: Pair<String, Long>? = null
 
-        override fun getPending(): PendingOverlayPayload? = pending
+        override fun getPending(): PendingOverlayPayload? = storedPending
 
         override fun clearPendingIfMatches(taskId: String, logId: Long): Boolean {
-            val current = pending ?: return false
+            val current = storedPending ?: return false
             if (current.taskId != taskId || current.logId != logId) return false
-            pending = null
+            storedPending = null
             clearedMatch = taskId to logId
             return true
         }
