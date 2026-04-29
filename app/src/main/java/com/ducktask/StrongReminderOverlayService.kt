@@ -1197,6 +1197,16 @@ class StrongReminderOverlayService : Service() {
             isFakeBoldText = true
             color = Color.WHITE
         }
+        private data class ClusterGeometry(
+            val centerX: Float,
+            val centerY: Float,
+            val ringRadius: Float,
+            val labelLeft: Float,
+            val labelTop: Float,
+            val labelRight: Float,
+            val labelBottom: Float,
+            val effectsClipBottom: Float
+        )
 
         override fun hasOverlappingRendering(): Boolean = false
 
@@ -1237,9 +1247,7 @@ class StrongReminderOverlayService : Service() {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val centerX = width / 2f
-            val centerY = height * 0.42f
-            val ringRadius = minOf(width, height) * 0.315f
+            val geometry = computeGeometry(width.toFloat(), height.toFloat())
             val statePulse = when (holdState) {
                 HoldState.IDLE -> ambientPulse
                 HoldState.CHARGING -> progress
@@ -1248,16 +1256,57 @@ class StrongReminderOverlayService : Service() {
             }
 
             configurePaints()
-            drawHalo(canvas, centerX, centerY, ringRadius, statePulse)
-            drawEnergySlices(canvas, centerX, centerY, ringRadius)
-            drawRing(canvas, centerX, centerY, ringRadius)
-            drawTickMarks(canvas, centerX, centerY, ringRadius)
-            drawEnergySpokes(canvas, centerX, centerY, ringRadius)
-            drawOrbitSparks(canvas, centerX, centerY, ringRadius)
-            drawCoreGlyph(canvas, centerX, centerY, ringRadius)
-            drawCrossFlare(canvas, centerX, centerY, ringRadius)
-            drawBurst(canvas, centerX, centerY, ringRadius)
-            drawLabel(canvas, centerX, centerY, ringRadius)
+            val effectsCheckpoint = canvas.save()
+            canvas.clipRect(0f, 0f, width.toFloat(), geometry.effectsClipBottom)
+            drawHalo(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius, statePulse)
+            drawEnergySlices(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawRing(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawTickMarks(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawEnergySpokes(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawOrbitSparks(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawCoreGlyph(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawCrossFlare(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            drawBurst(canvas, geometry.centerX, geometry.centerY, geometry.ringRadius)
+            canvas.restoreToCount(effectsCheckpoint)
+            drawLabel(canvas, geometry)
+        }
+
+        private fun computeGeometry(viewWidth: Float, viewHeight: Float): ClusterGeometry {
+            val centerX = viewWidth / 2f
+            val ringRadius = minOf(viewWidth, viewHeight) * 0.275f
+            val baseCenterY = viewHeight * 0.38f
+            val labelHeight = dp(32f)
+            val labelGap = dp(18f)
+            val bottomSafeInset = dp(12f)
+            val labelHalfWidth = dp(84f)
+            val bottomEffectExpansion = when (holdState) {
+                HoldState.IDLE -> dp(12f)
+                HoldState.CHARGING -> dp(18f + progress * 10f)
+                HoldState.CHARGED_WAITING_RELEASE -> dp(24f + chargedPulse * 12f)
+                HoldState.COMPLETING -> dp(12f + (1f - completionProgress) * 8f)
+            }
+
+            var centerY = baseCenterY
+            val labelBottomIfUnshifted = centerY + ringRadius + bottomEffectExpansion + labelGap + labelHeight
+            val bottomLimit = viewHeight - bottomSafeInset
+            val overflow = labelBottomIfUnshifted - bottomLimit
+            if (overflow > 0f) {
+                centerY -= overflow
+            }
+
+            val labelTop = centerY + ringRadius + bottomEffectExpansion + labelGap
+            val labelBottom = labelTop + labelHeight
+            val effectsClipBottom = (labelTop - dp(8f)).coerceIn(0f, viewHeight)
+            return ClusterGeometry(
+                centerX = centerX,
+                centerY = centerY,
+                ringRadius = ringRadius,
+                labelLeft = centerX - labelHalfWidth,
+                labelTop = labelTop,
+                labelRight = centerX + labelHalfWidth,
+                labelBottom = labelBottom,
+                effectsClipBottom = effectsClipBottom
+            )
         }
 
         private fun configurePaints() {
@@ -1607,22 +1656,40 @@ class StrongReminderOverlayService : Service() {
             }
         }
 
-        private fun drawLabel(canvas: Canvas, centerX: Float, centerY: Float, radius: Float) {
+        private fun drawLabel(canvas: Canvas, geometry: ClusterGeometry) {
             val label = when (holdState) {
                 HoldState.IDLE -> "长按确认"
                 HoldState.CHARGING -> "保持按住"
                 HoldState.CHARGED_WAITING_RELEASE -> "松手确认"
                 HoldState.COMPLETING -> "已完成"
             }
-            val labelTop = centerY + radius + dp(22f)
-            val labelBottom = labelTop + dp(32f)
-            labelRect.set(centerX - dp(84f), labelTop, centerX + dp(84f), labelBottom)
-            val pillAlpha = when (holdState) {
+            val labelVisibility = when {
+                holdState != HoldState.COMPLETING -> 1f
+                completionProgress <= 0.30f -> 1f
+                completionProgress >= 0.75f -> 0f
+                else -> 1f - ((completionProgress - 0.30f) / 0.45f)
+            }.coerceIn(0f, 1f)
+            if (labelVisibility <= 0f) return
+
+            labelRect.set(
+                geometry.labelLeft,
+                geometry.labelTop,
+                geometry.labelRight,
+                geometry.labelBottom
+            )
+            val basePillAlpha = when (holdState) {
                 HoldState.IDLE -> (24 + ambientPulse * 18).toInt()
                 HoldState.CHARGING -> (54 + progress * 44).toInt()
                 HoldState.CHARGED_WAITING_RELEASE -> (110 + chargedPulse * 70).toInt()
                 HoldState.COMPLETING -> (170 - completionProgress * 90).toInt()
             }.coerceIn(18, 200)
+            val pillAlpha = (basePillAlpha * labelVisibility).toInt().coerceIn(0, 200)
+            labelStrokePaint.color = Color.argb(
+                (88f * labelVisibility).toInt().coerceIn(0, 120),
+                255,
+                255,
+                255
+            )
             labelFillPaint.color = Color.argb(
                 pillAlpha,
                 Color.red(accentColor),
@@ -1632,13 +1699,14 @@ class StrongReminderOverlayService : Service() {
             canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelFillPaint)
             canvas.drawRoundRect(labelRect, dp(18f), dp(18f), labelStrokePaint)
 
+            val baseTextAlpha = when (holdState) {
+                HoldState.IDLE -> 228
+                HoldState.CHARGING -> 238
+                HoldState.CHARGED_WAITING_RELEASE -> 255
+                HoldState.COMPLETING -> (255 - completionProgress * 70).toInt()
+            }.coerceIn(180, 255)
             textPaint.color = Color.argb(
-                when (holdState) {
-                    HoldState.IDLE -> 228
-                    HoldState.CHARGING -> 238
-                    HoldState.CHARGED_WAITING_RELEASE -> 255
-                    HoldState.COMPLETING -> (255 - completionProgress * 70).toInt()
-                }.coerceIn(180, 255),
+                (baseTextAlpha * labelVisibility).toInt().coerceIn(0, 255),
                 255,
                 255,
                 255
@@ -1652,7 +1720,7 @@ class StrongReminderOverlayService : Service() {
                 }
             )
             val baseline = labelRect.centerY() - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
-            canvas.drawText(label, centerX, baseline, textPaint)
+            canvas.drawText(label, geometry.centerX, baseline, textPaint)
         }
 
         private fun dp(value: Float): Float {
