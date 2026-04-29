@@ -50,8 +50,20 @@ Parser parses in phases: repeat rules → relative duration → relative date �
 1. **ReminderScheduler** sets exact alarms via AlarmManager
 2. **AlarmReceiver** triggers on alarm, shows notification via **DuckTaskNotifications**
 3. For STRONG reminders: **StrongReminderOverlayService** displays a full-screen overlay (requires SYSTEM_ALERT_WINDOW permission)
-4. **ReminderActionReceiver** handles user acknowledgment (notification action button)
-5. Boot receiver reschedules all pending tasks after device restart
+   - Uses `ForegroundService` with `SYSTEM_EXEMPTED` type for Android 14+ lock screen scenarios
+   - On lock screen: saves pending state via **PendingOverlayManager**, service waits for unlock
+   - On unlock: service detects via `maybeShowDeferredOverlay()` + unlock polling
+4. **PendingOverlayManager** stores pending overlay data in SharedPreferences
+5. **ReminderActionReceiver** handles user acknowledgment (notification action button)
+6. Boot receiver reschedules all pending tasks after device restart
+
+**Lock Screen Flow for STRONG Reminders:**
+```
+Alarm fires → AlarmReceiver → isDeviceLocked? → YES → savePending() + startIfPossible()
+                                              → Service checks lock → still locked → armDeferredOverlay()
+                                                                                     → register unlock receiver + start polling
+                                                                                     → unlock detected → showOverlay()
+```
 
 **Note:** Strong reminders use overlay only (no in-app Activity fallback). The overlay shows a circular hold-to-dismiss button with ring progress animation and particle burst effects on completion.
 
