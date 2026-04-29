@@ -9,6 +9,7 @@ import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
+import com.ducktask.app.util.AlarmLoopManager
 import com.ducktask.app.util.AppLogger
 import com.ducktask.app.util.PendingOverlayManager
 import com.ducktask.app.util.PermissionUtils
@@ -74,6 +75,36 @@ class AlarmReceiver : BroadcastReceiver() {
                                     "Failed to start strong overlay service for: ${task.event}"
                                 )
                             }
+
+                            // 如果启用了闹钟样式或循环提醒（周期性任务也支持）
+                            if (task.alarmEnabled) {
+                                // 启动闹钟全屏
+                                val alarmIntent = AlarmFullScreenActivity.createIntent(
+                                    appContext,
+                                    task.taskId,
+                                    task.event,
+                                    task.description,
+                                    task.alarmRingtone,
+                                    task.alarmVibrateCount,
+                                    logId
+                                )
+                                appContext.startActivity(alarmIntent)
+                            }
+
+                            // 如果启用了循环提醒
+                            if (task.alertLoopEnabled) {
+                                AlarmLoopManager.startLoop(
+                                    context = appContext,
+                                    taskId = task.taskId,
+                                    event = task.event,
+                                    description = task.description,
+                                    ringtone = task.alarmRingtone,
+                                    vibrateCount = task.alarmVibrateCount,
+                                    logId = logId,
+                                    intervalMinutes = task.alertLoopIntervalMinutes,
+                                    maxCount = task.alertLoopMaxCount
+                                )
+                            }
                         }
                     }
                 } else {
@@ -111,6 +142,36 @@ class AlarmReceiver : BroadcastReceiver() {
                                 AppLogger.info(
                                     "AlarmReceiver",
                                     "Failed to start strong overlay service for: ${task.event}"
+                                )
+                            }
+
+                            // 如果启用了闹钟样式或循环提醒
+                            if (task.alarmEnabled) {
+                                // 启动闹钟全屏
+                                val alarmIntent = AlarmFullScreenActivity.createIntent(
+                                    appContext,
+                                    task.taskId,
+                                    task.event,
+                                    task.description,
+                                    task.alarmRingtone,
+                                    task.alarmVibrateCount,
+                                    logId
+                                )
+                                appContext.startActivity(alarmIntent)
+                            }
+
+                            // 如果启用了循环提醒
+                            if (task.alertLoopEnabled) {
+                                AlarmLoopManager.startLoop(
+                                    context = appContext,
+                                    taskId = task.taskId,
+                                    event = task.event,
+                                    description = task.description,
+                                    ringtone = task.alarmRingtone,
+                                    vibrateCount = task.alarmVibrateCount,
+                                    logId = logId,
+                                    intervalMinutes = task.alertLoopIntervalMinutes,
+                                    maxCount = task.alertLoopMaxCount
                                 )
                             }
                         }
