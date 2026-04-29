@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -129,6 +131,7 @@ fun MainScreen(
     var logTab by rememberSaveable { mutableStateOf(LogTab.EXECUTION.name) }
     var deletingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSuccess by remember { mutableStateOf(false) }
+    var showError by remember { mutableStateOf(false) }
     val currentDestination = MainDestination.valueOf(destination)
     val currentLogTab = LogTab.valueOf(logTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
@@ -149,6 +152,14 @@ fun MainScreen(
             delay(2200)
             showSuccess = false
             viewModel.onEvent(MainUiEvent.ClearSuccess)
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        if (uiState.errorMessage != null) {
+            showError = true
+            delay(3000)
+            showError = false
         }
     }
 
@@ -315,6 +326,40 @@ fun MainScreen(
                 }
             }
 
+            AnimatedVisibility(
+                visible = showError,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp, start = 16.dp, end = 16.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Error,
+                    shadowElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+
             if (deletingTask != null) {
                 DeleteConfirmDialog(
                     task = deletingTask,
@@ -415,12 +460,12 @@ private fun HomeContent(
                 inputText = uiState.inputText,
                 createReminderMode = uiState.createReminderMode,
                 isLoading = uiState.isLoading,
-                errorMessage = uiState.errorMessage,
                 onInputChange = onInputChange,
                 onReminderModeChange = onReminderModeChange,
                 onSubmit = {
                     onSubmit()
-                    showInputSheet = false
+                    // Don't close sheet here - let ViewModel handle success/failure
+                    // Sheet will be closed when error is cleared
                 }
             )
         }
@@ -663,7 +708,6 @@ private fun InputCard(
     inputText: String,
     createReminderMode: Int,
     isLoading: Boolean,
-    errorMessage: String?,
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
     onSubmit: () -> Unit
@@ -704,15 +748,6 @@ private fun InputCard(
 
             Spacer(modifier = Modifier.height(12.dp))
             ReminderModePicker(selectedMode = createReminderMode, onModeSelected = onReminderModeChange)
-
-            errorMessage?.let {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = it,
-                    color = Error,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
 
             Spacer(modifier = Modifier.height(12.dp))
             Button(
