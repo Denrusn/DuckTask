@@ -94,6 +94,7 @@ import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
 import com.ducktask.app.domain.model.Task
+import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.ui.theme.DuckOrange
 import com.ducktask.app.ui.theme.Error
 import com.ducktask.app.ui.theme.Success
@@ -138,12 +139,11 @@ fun MainScreen(
     var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var logTab by rememberSaveable { mutableStateOf(LogTab.EXECUTION.name) }
     var deletingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
-    var taskTab by rememberSaveable { mutableStateOf(TaskTab.PENDING.name) }
+    var taskTab by rememberSaveable { mutableStateOf(TaskTab.PENDING) }
     var showSuccess by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     val currentDestination = MainDestination.valueOf(destination)
     val currentLogTab = LogTab.valueOf(logTab)
-    val currentTaskTab = TaskTab.valueOf(taskTab)
     val editingTask = tasks.firstOrNull { it.taskId == editingTaskId }
     val deletingTask = tasks.firstOrNull { it.taskId == deletingTaskId }
     val openLogTab: (LogTab) -> Unit = {
@@ -260,13 +260,16 @@ fun MainScreen(
                 MainDestination.HOME -> HomeContent(
                     uiState = uiState,
                     tasks = tasks,
-                    currentTaskTab = currentTaskTab,
+                    currentTaskTab = taskTab,
                     onTaskTabChange = { taskTab = it },
                     onInputChange = { viewModel.onEvent(MainUiEvent.InputChanged(it)) },
                     onReminderModeChange = { viewModel.onEvent(MainUiEvent.CreateReminderModeChanged(it)) },
                     onSubmit = {
                         focusManager.clearFocus()
                         viewModel.onEvent(MainUiEvent.SubmitTask)
+                    },
+                    onSubmitWithOptions = { a, b, c, d, e, f ->
+                        viewModel.onEvent(MainUiEvent.SubmitTaskWithOptions(a, b, c, d, e, f))
                     },
                     onDelete = { deletingTaskId = it.taskId },
                     onDone = { viewModel.onEvent(MainUiEvent.MarkDone(it)) },
@@ -436,6 +439,7 @@ private fun HomeContent(
     onInputChange: (String) -> Unit,
     onReminderModeChange: (Int) -> Unit,
     onSubmit: () -> Unit,
+    onSubmitWithOptions: (Boolean, Boolean, Int, Boolean, Int, Int) -> Unit,
     onDelete: (Task) -> Unit,
     onDone: (Task) -> Unit,
     onEdit: (Task) -> Unit
@@ -522,14 +526,7 @@ private fun HomeContent(
                     // Don't close sheet here - let ViewModel handle success/failure
                     // Sheet will be closed when error is cleared
                 },
-                onSubmitWithOptions = { alarmEnabled, alarmRingtone, alarmVibrateCount, alertLoopEnabled, alertLoopInterval, alertLoopMaxCount ->
-                    viewModel.onEvent(
-                        MainUiEvent.SubmitTaskWithOptions(
-                            alarmEnabled, alarmRingtone, alarmVibrateCount,
-                            alertLoopEnabled, alertLoopInterval, alertLoopMaxCount
-                        )
-                    )
-                }
+                onSubmitWithOptions = onSubmitWithOptions
             )
         }
     }

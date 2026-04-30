@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
-import androidx.sqlite.db.support.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ducktask.app.domain.model.AppRuntimeLog
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.Task
