@@ -1,23 +1,14 @@
 package com.ducktask.app
 
 import android.animation.ValueAnimator
-import android.view.animation.AccelerateInterpolator
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.LinearInterpolator
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.ServiceInfo
 import android.graphics.Color
-import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
-import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
@@ -30,19 +21,13 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
-import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AppCompatActivity
 import com.ducktask.app.data.local.AppDatabase
-import com.ducktask.app.domain.model.Task
 import com.ducktask.app.domain.model.TaskStatus
-import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.ui.views.HoldState
 import com.ducktask.app.ui.views.OverlayActionClusterView
 import com.ducktask.app.util.AppLogger
-import com.ducktask.app.util.PendingOverlayManager
-import com.ducktask.app.util.PendingOverlayPayload
-import com.ducktask.app.util.PermissionUtils
+import com.ducktask.util.PendingOverlayManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,15 +35,13 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-class StrongReminderOverlayService : Service() {
+class FullScreenAlarmActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private lateinit var windowManager: WindowManager
     private val accentColor = Color.parseColor("#FFFF6B35")
     private val armedColor = Color.parseColor("#FFFFC857")
     private val successColor = Color.parseColor("#FF4CAF50")
 
-    // UI 组件
-    private var overlayView: FrameLayout? = null
+    // UI components
     private var eventText: TextView? = null
     private var statusText: TextView? = null
     private var backdropTintView: View? = null
@@ -71,7 +54,7 @@ class StrongReminderOverlayService : Service() {
     private var actionClusterView: OverlayActionClusterView? = null
     private var particleViews = mutableListOf<View>()
 
-    // 状态
+    // State
     private val holdController = OverlayHoldController()
     private var holdRunnable: Runnable? = null
     private val dismissRunnable = Runnable { dismissReminder() }
@@ -87,81 +70,76 @@ class StrongReminderOverlayService : Service() {
     private var currentMilestone = 0
     private var ambientPulse = 0f
     private var chargedPulse = 0f
-    private var isWaitingForUnlock = false
-    private var unlockReceiver: BroadcastReceiver? = null
-    private var unlockPollAttemptsRemaining = 0
-    private var unlockPollIntervalMs = 500L
     private var orbitAnimator: ValueAnimator? = null
     private var ambientPulseAnimator: ValueAnimator? = null
     private var chargedStateAnimator: ValueAnimator? = null
     private var completionAnimator: ValueAnimator? = null
-    private val unlockCheckRunnable: Runnable = object : Runnable {
-        override fun run() {
-            if (!isWaitingForUnlock) return
-            val shown = maybeShowDeferredOverlay("unlock_poll")
-            if (!shown && unlockPollAttemptsRemaining > 0) {
-                unlockPollAttemptsRemaining -= 1
-                mainHandler.postDelayed(this, unlockPollIntervalMs)
-            }
-        }
-    }
 
-    override fun onCreate() {
-        super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-    }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        if (!PermissionUtils.canDrawOverlay(this)) {
-            AppLogger.info("StrongReminderOverlay", "Overlay permission missing, service aborted")
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        // Setup window flags to show over lock screen
+        setupWindowFlags()
 
-        val event = intent.getStringExtra(EXTRA_EVENT).orEmpty().ifBlank { "DuckTask 提醒" }
-        val description = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
+        setContentView(buildUI())
+
+        // Parse intent extras
         currentTaskId = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
-        currentEvent = event
-        currentDescription = description
+        currentEvent = intent.getStringExtra(EXTRA_EVENT).orEmpty().ifBlank { "DuckTask 提醒" }
+        currentDescription = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
         currentLogId = intent.getLongExtra(EXTRA_LOG_ID, -1L)
-        currentNotificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, event.hashCode())
-        val waitForUnlock = PermissionUtils.isDeviceLocked(this)
+        currentNotificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, currentEvent.hashCode())
 
-        ServiceCompat.startForeground(
-            this,
-            currentNotificationId,
-            buildForegroundNotification(event, description),
-            foregroundServiceType(waitForUnlock)
-        )
+        // Clear pending overlay if matches
+        PendingOverlayManager.clearPendingIfMatches(this, currentTaskId, currentLogId)
 
-        if (waitForUnlock) {
-            armDeferredOverlay(event)
-        } else {
-            isWaitingForUnlock = false
-            unregisterUnlockReceiverIfNeeded()
-            showOverlay(event, description)
-        }
-        return START_NOT_STICKY
+        // Initialize UI state
+        syncHoldTransition(holdController.forceIdle())
+        applyActionClusterBase(accentColor)
+        enterIdleState()
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
-        unregisterUnlockReceiverIfNeeded()
         cancelVisualAnimators()
-        removeOverlay()
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBackPressed() {
+        // Prevent back press from dismissing
+    }
 
-    private fun showOverlay(event: String, description: String) {
-        removeOverlay()
-        cancelVisualAnimators()
+    private fun setupWindowFlags() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
 
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        )
+
+        // Fullscreen immersive
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        )
+    }
+
+    private fun buildUI(): View {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#E60D0D0D"))
             isClickable = true
@@ -258,7 +236,7 @@ class StrongReminderOverlayService : Service() {
         })
 
         eventText = TextView(this).apply {
-            text = event.ifBlank { "DuckTask 提醒" }
+            text = currentEvent.ifBlank { "DuckTask 提醒" }
             setTextColor(Color.WHITE)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             textSize = 34f
@@ -303,10 +281,7 @@ class StrongReminderOverlayService : Service() {
                 true
             }
         }
-        root.addView(actionClusterView, FrameLayout.LayoutParams(dp(240), dp(240)).apply {
-            gravity = Gravity.CENTER
-            topMargin = dp(60)
-        })
+        root.addView(actionClusterView)
 
         flashView = View(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -320,107 +295,7 @@ class StrongReminderOverlayService : Service() {
             )
         )
 
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.CENTER }
-
-        runCatching {
-            windowManager.addView(root, params)
-            overlayView = root
-
-            val cleared = PendingOverlayManager.clearPendingIfMatches(this, currentTaskId, currentLogId)
-            if (cleared) {
-                AppLogger.info("StrongReminderOverlay", "Cleared matching pending overlay for: $event")
-            }
-        }.onFailure {
-            AppLogger.error("StrongReminderOverlay", "Failed to add overlay view", it)
-            stopSelf()
-        }
-
-        syncHoldTransition(holdController.forceIdle())
-        applyActionClusterBase(accentColor)
-        enterIdleState()
-    }
-
-    private fun armDeferredOverlay(event: String) {
-        removeOverlay()
-        isWaitingForUnlock = true
-        registerUnlockReceiverIfNeeded()
-        startUnlockPolling(attempts = 6, intervalMs = 750L)
-        AppLogger.info("StrongReminderOverlay", "Device locked, waiting for unlock for: $event")
-    }
-
-    private fun maybeShowDeferredOverlay(source: String): Boolean {
-        if (!isWaitingForUnlock) return false
-        if (!PermissionUtils.canDrawOverlay(this)) {
-            AppLogger.info("StrongReminderOverlay", "Overlay permission missing while waiting for unlock")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return false
-        }
-        if (PermissionUtils.isDeviceLocked(this)) {
-            if (source != "unlock_poll") {
-                AppLogger.info(
-                    "StrongReminderOverlay",
-                    "Received $source but device is still locked for: $currentEvent"
-                )
-            }
-            return false
-        }
-
-        isWaitingForUnlock = false
-        unregisterUnlockReceiverIfNeeded()
-        AppLogger.info("StrongReminderOverlay", "Unlock detected via $source, showing overlay for: $currentEvent")
-        showOverlay(currentEvent, currentDescription)
-        return true
-    }
-
-    private fun startUnlockPolling(attempts: Int, intervalMs: Long) {
-        unlockPollAttemptsRemaining = attempts
-        unlockPollIntervalMs = intervalMs
-        mainHandler.removeCallbacks(unlockCheckRunnable)
-        mainHandler.postDelayed(unlockCheckRunnable, intervalMs)
-    }
-
-    private fun registerUnlockReceiverIfNeeded() {
-        if (unlockReceiver != null) return
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                when (intent?.action) {
-                    Intent.ACTION_USER_PRESENT -> maybeShowDeferredOverlay("user_present")
-                    Intent.ACTION_SCREEN_ON -> startUnlockPolling(attempts = 20, intervalMs = 300L)
-                }
-            }
-        }
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_USER_PRESENT)
-            addAction(Intent.ACTION_SCREEN_ON)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(receiver, filter)
-        }
-        unlockReceiver = receiver
-    }
-
-    private fun unregisterUnlockReceiverIfNeeded() {
-        mainHandler.removeCallbacks(unlockCheckRunnable)
-        unlockPollAttemptsRemaining = 0
-        unlockReceiver?.let { receiver ->
-            runCatching { unregisterReceiver(receiver) }
-        }
-        unlockReceiver = null
+        return root
     }
 
     private fun handleButtonTouch(event: MotionEvent) {
@@ -537,7 +412,7 @@ class StrongReminderOverlayService : Service() {
         completionAnimator?.cancel()
         completionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 900L
-            interpolator = DecelerateInterpolator()
+            interpolator = android.view.animation.DecelerateInterpolator()
             addUpdateListener { animator ->
                 val progress = animator.animatedValue as Float
                 completionProgress = progress
@@ -769,7 +644,7 @@ class StrongReminderOverlayService : Service() {
         orbitAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
             duration = durationMs
             repeatCount = ValueAnimator.INFINITE
-            interpolator = LinearInterpolator()
+            interpolator = android.view.animation.LinearInterpolator()
             addUpdateListener { animator ->
                 val rotation = animator.animatedValue as Float
                 actionClusterView?.setOrbitRotation(rotation)
@@ -781,7 +656,7 @@ class StrongReminderOverlayService : Service() {
                 duration = 1_200L
                 repeatCount = ValueAnimator.INFINITE
                 repeatMode = ValueAnimator.REVERSE
-                interpolator = LinearInterpolator()
+                interpolator = android.view.animation.LinearInterpolator()
                 addUpdateListener { animator ->
                     ambientPulse = animator.animatedValue as Float
                     if (holdState == HoldState.IDLE) {
@@ -801,7 +676,7 @@ class StrongReminderOverlayService : Service() {
             duration = 780L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
-            interpolator = LinearInterpolator()
+            interpolator = android.view.animation.LinearInterpolator()
             addUpdateListener { animator ->
                 if (holdState != HoldState.CHARGED_WAITING_RELEASE) return@addUpdateListener
                 applyChargedWaitingVisuals(animator.animatedValue as Float)
@@ -857,7 +732,6 @@ class StrongReminderOverlayService : Service() {
     }
 
     private fun triggerParticleEffect() {
-        val root = overlayView ?: return
         val (centerX, centerY) = currentActionClusterCenter() ?: return
         val particleCount = 28
 
@@ -880,12 +754,14 @@ class StrongReminderOverlayService : Service() {
             particle.layoutParams = FrameLayout.LayoutParams(size.toInt(), size.toInt())
             particle.x = centerX - size / 2
             particle.y = centerY - size / 2
-            root.addView(particle)
+
+            val rootView = findViewById<ViewGroup>(android.R.id.content)
+            rootView.addView(particle)
             particleViews.add(particle)
 
-            // 动画
-            val targetX = centerX + (distance * Math.cos(angle)).toFloat() - size / 2
-            val targetY = centerY + (distance * Math.sin(angle)).toFloat() - size / 2
+            // Animation
+            val targetX = centerX + (distance * cos(angle)).toFloat() - size / 2
+            val targetY = centerY + (distance * sin(angle)).toFloat() - size / 2
 
             particle.animate()
                 .x(targetX)
@@ -894,9 +770,9 @@ class StrongReminderOverlayService : Service() {
                 .scaleX(0.2f)
                 .scaleY(0.2f)
                 .setDuration(860L)
-                .setInterpolator(AccelerateInterpolator())
+                .setInterpolator(android.view.animation.AccelerateInterpolator())
                 .withEndAction {
-                    root.removeView(particle)
+                    rootView.removeView(particle)
                     particleViews.remove(particle)
                 }
                 .start()
@@ -908,7 +784,6 @@ class StrongReminderOverlayService : Service() {
     }
 
     private fun triggerRippleEffect(delayMs: Long, startScale: Float, strokeColor: Int) {
-        val root = overlayView ?: return
         val (centerX, centerY) = currentActionClusterCenter() ?: return
 
         val ripple = View(this).apply {
@@ -924,7 +799,9 @@ class StrongReminderOverlayService : Service() {
         ripple.y = centerY - size / 2f
         ripple.scaleX = startScale
         ripple.scaleY = startScale
-        root.addView(ripple)
+
+        val rootView = findViewById<ViewGroup>(android.R.id.content)
+        rootView.addView(ripple)
         particleViews.add(ripple)
 
         ripple.animate()
@@ -933,9 +810,9 @@ class StrongReminderOverlayService : Service() {
             .alpha(0f)
             .setStartDelay(delayMs)
             .setDuration(1_050L)
-            .setInterpolator(LinearInterpolator())
+            .setInterpolator(android.view.animation.LinearInterpolator())
             .withEndAction {
-                root.removeView(ripple)
+                rootView.removeView(ripple)
                 particleViews.remove(ripple)
             }
             .start()
@@ -945,15 +822,18 @@ class StrongReminderOverlayService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         completionAnimator?.cancel()
 
+        // Cancel notification
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(currentNotificationId)
+
+        // Update database
         if (currentLogId > 0) {
             val logId = currentLogId
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
                     val db = AppDatabase.getInstance(applicationContext)
                     db.reminderLogDao()
-                        .acknowledge(logId, System.currentTimeMillis(), DISMISS_METHOD_OVERLAY)
+                        .acknowledge(logId, System.currentTimeMillis(), DISMISS_METHOD_ACTIVITY)
                     if (currentTaskId.isNotBlank()) {
                         val task = db.taskDao().getTaskByTaskId(currentTaskId)
                         if (task?.status == TaskStatus.ALERTING) {
@@ -961,7 +841,7 @@ class StrongReminderOverlayService : Service() {
                         }
                     }
                 }.onFailure {
-                    AppLogger.error("StrongReminderOverlay", "Failed to acknowledge overlay dismissal", it)
+                    AppLogger.error("FullScreenAlarm", "Failed to acknowledge dismissal", it)
                 }
             }
         } else if (currentTaskId.isNotBlank()) {
@@ -975,56 +855,8 @@ class StrongReminderOverlayService : Service() {
                 }
             }
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    }
 
-    private fun buildForegroundNotification(event: String, description: String) =
-        NotificationCompat.Builder(this, DuckTaskNotifications.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("DuckTask：$event")
-            .setContentText(description.ifBlank { "强提醒进行中" })
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(
-                PendingIntent.getActivity(
-                    this,
-                    currentNotificationId,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
-            .build()
-
-    private fun removeOverlay() {
-        overlayView?.let { view ->
-            runCatching { windowManager.removeView(view) }
-        }
-        overlayView = null
-        particleViews.forEach { view ->
-            runCatching { (view.parent as? ViewGroup)?.removeView(view) }
-        }
-        particleViews.clear()
-        eventText = null
-        statusText = null
-        backdropTintView = null
-        glowView = null
-        leftBeamView = null
-        rightBeamView = null
-        topBeamView = null
-        bottomBeamView = null
-        flashView = null
-        actionClusterView = null
-        holdRunnable = null
-        syncHoldTransition(holdController.forceIdle())
-        holdState = HoldState.IDLE
-        isPointerDown = false
-        holdProgress = 0f
-        completionProgress = 0f
-        currentMilestone = 0
+        finish()
     }
 
     private fun dp(value: Int): Int =
@@ -1120,7 +952,7 @@ class StrongReminderOverlayService : Service() {
     }
 
     companion object {
-        const val DISMISS_METHOD_OVERLAY = "overlay"
+        const val DISMISS_METHOD_ACTIVITY = "activity"
         private const val HOLD_DURATION_MS = 3_000L
         const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_EVENT = "event"
@@ -1128,64 +960,18 @@ class StrongReminderOverlayService : Service() {
         const val EXTRA_LOG_ID = "log_id"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
 
-        fun startIfPossible(context: Context, task: Task, logId: Long): Boolean {
-            return startService(
-                context = context,
-                taskId = task.taskId,
-                event = task.event,
-                description = task.description,
-                logId = logId,
-                notificationId = task.taskId.hashCode()
-            )
-        }
-
-        fun startPendingIfPossible(context: Context, pending: PendingOverlayPayload): Boolean {
-            return startService(
-                context = context,
-                taskId = pending.taskId,
-                event = pending.event,
-                description = pending.description,
-                logId = pending.logId,
-                notificationId = pending.notificationId
-            )
-        }
-
-        private fun startService(
-            context: Context,
-            taskId: String,
-            event: String,
-            description: String,
-            logId: Long,
-            notificationId: Int
-        ): Boolean {
-            if (!PermissionUtils.canDrawOverlay(context)) {
-                return false
+        fun start(context: Context, taskId: String, event: String, description: String, logId: Long, notificationId: Int) {
+            val intent = Intent(context, FullScreenAlarmActivity::class.java).apply {
+                putExtra(EXTRA_TASK_ID, taskId)
+                putExtra(EXTRA_EVENT, event)
+                putExtra(EXTRA_DESCRIPTION, description)
+                putExtra(EXTRA_LOG_ID, logId)
+                putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
-            val intent = Intent(context, StrongReminderOverlayService::class.java)
-                .putExtra(EXTRA_TASK_ID, taskId)
-                .putExtra(EXTRA_EVENT, event)
-                .putExtra(EXTRA_DESCRIPTION, description)
-                .putExtra(EXTRA_LOG_ID, logId)
-                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-            return runCatching {
-                DuckTaskNotifications.ensureChannel(context)
-                ContextCompat.startForegroundService(context, intent)
-                true
-            }.onFailure {
-                AppLogger.error("StrongReminderOverlay", "Failed to start overlay service", it)
-            }.getOrDefault(false)
-        }
-
-        private fun foregroundServiceType(waitForUnlock: Boolean): Int {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                if (waitForUnlock) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
-                } else {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
-                }
-            } else {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
-            }
+            context.startActivity(intent)
         }
     }
 }
