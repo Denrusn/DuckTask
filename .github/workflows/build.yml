@@ -36,7 +36,7 @@ jobs:
         run: |
           set -o pipefail
           log_file=$(mktemp)
-          if gradle testDebugUnitTest --no-daemon 2>&1 | tee "$log_file"; then
+          if gradle testProdDebugUnitTest --no-daemon 2>&1 | tee "$log_file"; then
             exit 0
           fi
 
@@ -73,10 +73,10 @@ jobs:
         run: exit 1
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleProdDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DuckTask-debug.apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: DuckTask-prod-debug.apk
+          path: app/build/outputs/apk/prod/debug/app-prod-debug.apk
