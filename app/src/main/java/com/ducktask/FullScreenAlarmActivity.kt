@@ -27,7 +27,7 @@ import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.ui.views.HoldState
 import com.ducktask.app.ui.views.OverlayActionClusterView
 import com.ducktask.app.util.AppLogger
-import com.ducktask.util.PendingOverlayManager
+import com.ducktask.app.util.PendingOverlayManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
