@@ -1,6 +1,7 @@
 package com.ducktask.app.util
 
 import android.content.Context
+import android.util.Log
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.AppRuntimeLog
 import kotlinx.coroutines.CoroutineScope
@@ -18,10 +19,17 @@ object AppLogger {
     }
 
     fun info(tag: String, message: String, details: String? = null) {
+        Log.i(tag, message)
         write("INFO", tag, message, details)
     }
 
+    fun warn(tag: String, message: String, details: String? = null) {
+        Log.w(tag, message)
+        write("WARN", tag, message, details)
+    }
+
     fun error(tag: String, message: String, throwable: Throwable? = null) {
+        Log.e(tag, message, throwable)
         write(
             level = "ERROR",
             tag = tag,
