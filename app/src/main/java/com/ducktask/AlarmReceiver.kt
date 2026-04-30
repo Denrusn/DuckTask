@@ -3,6 +3,7 @@ package com.ducktask.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.ducktask.app.FullScreenAlarmActivity
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.ReminderExecutionLog
 import com.ducktask.app.domain.model.ReminderMode
@@ -10,7 +11,6 @@ import com.ducktask.app.domain.model.TaskStatus
 import com.ducktask.app.notification.DuckTaskNotifications
 import com.ducktask.app.scheduler.ReminderScheduler
 import com.ducktask.app.util.AppLogger
-import com.ducktask.app.util.PendingOverlayManager
 import com.ducktask.app.util.PermissionUtils
 import com.ducktask.app.util.nextRunAfter
 import kotlinx.coroutines.CoroutineScope
@@ -49,30 +49,23 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     ReminderScheduler(appContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(appContext, task, nextRunTime, logId)
-                    // STRONG 模式：仅通过悬浮窗提醒
+                    // STRONG 模式：启动全屏提醒 Activity
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (!PermissionUtils.canDrawOverlay(appContext)) {
-                            AppLogger.info("AlarmReceiver", "Overlay permission missing, skip strong overlay for: ${task.event}")
-                        } else {
-                            val deviceLocked = PermissionUtils.isDeviceLocked(appContext)
-                            if (deviceLocked) {
-                                // 设备锁屏，保存待显示状态，并由前台服务守候到解锁
-                                PendingOverlayManager.savePending(
-                                    appContext,
-                                    task.taskId,
-                                    task.event,
-                                    task.description,
-                                    logId,
-                                    task.taskId.hashCode()
-                                )
-                                AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
-                            }
-                            val started = StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
-                            if (!started) {
-                                AppLogger.info(
-                                    "AlarmReceiver",
-                                    "Failed to start strong overlay service for: ${task.event}"
-                                )
+                        try {
+                            FullScreenAlarmActivity.start(
+                                appContext,
+                                task.taskId,
+                                task.event,
+                                task.description,
+                                logId,
+                                task.taskId.hashCode()
+                            )
+                            AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${task.event}")
+                        } catch (e: Exception) {
+                            AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
+                            // 备用：启动 StrongReminderOverlayService
+                            if (PermissionUtils.canDrawOverlay(appContext)) {
+                                StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
                             }
                         }
                     }
@@ -88,30 +81,23 @@ class AlarmReceiver : BroadcastReceiver() {
                         )
                     )
                     DuckTaskNotifications.showReminder(appContext, task, null, logId)
-                    // STRONG 模式：仅通过悬浮窗提醒
+                    // STRONG 模式：启动全屏提醒 Activity
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        if (!PermissionUtils.canDrawOverlay(appContext)) {
-                            AppLogger.info("AlarmReceiver", "Overlay permission missing, skip strong overlay for: ${task.event}")
-                        } else {
-                            val deviceLocked = PermissionUtils.isDeviceLocked(appContext)
-                            if (deviceLocked) {
-                                // 设备锁屏，保存待显示状态，并由前台服务守候到解锁
-                                PendingOverlayManager.savePending(
-                                    appContext,
-                                    task.taskId,
-                                    task.event,
-                                    task.description,
-                                    logId,
-                                    task.taskId.hashCode()
-                                )
-                                AppLogger.info("AlarmReceiver", "Device locked, saved pending overlay for: ${task.event}")
-                            }
-                            val started = StrongReminderOverlayService.startIfPossible(appContext, task, logId)
-                            if (!started) {
-                                AppLogger.info(
-                                    "AlarmReceiver",
-                                    "Failed to start strong overlay service for: ${task.event}"
-                                )
+                        try {
+                            FullScreenAlarmActivity.start(
+                                appContext,
+                                task.taskId,
+                                task.event,
+                                task.description,
+                                logId,
+                                task.taskId.hashCode()
+                            )
+                            AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${task.event}")
+                        } catch (e: Exception) {
+                            AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
+                            // 备用：启动 StrongReminderOverlayService
+                            if (PermissionUtils.canDrawOverlay(appContext)) {
+                                StrongReminderOverlayService.startIfPossible(appContext, task, logId)
                             }
                         }
                     }
