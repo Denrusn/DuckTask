@@ -3,6 +3,8 @@ package com.ducktask.app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import com.ducktask.app.FullScreenAlarmActivity
 import com.ducktask.app.data.local.AppDatabase
 import com.ducktask.app.domain.model.ReminderExecutionLog
@@ -18,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ReminderScheduler.ACTION_REMINDER) return
         val taskId = intent.getStringExtra(ReminderScheduler.EXTRA_TASK_ID) ?: return
@@ -49,23 +53,27 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                     ReminderScheduler(appContext).schedule(updatedTask)
                     DuckTaskNotifications.showReminder(appContext, task, nextRunTime, logId)
-                    // STRONG 模式：启动全屏提醒 Activity
+                    // STRONG 模式：启动全屏提醒 Activity（在主线程）
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        try {
-                            FullScreenAlarmActivity.start(
-                                appContext,
-                                task.taskId,
-                                task.event,
-                                task.description,
-                                logId,
-                                task.taskId.hashCode()
-                            )
-                            AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${task.event}")
-                        } catch (e: Exception) {
-                            AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
-                            // 备用：启动 StrongReminderOverlayService
-                            if (PermissionUtils.canDrawOverlay(appContext)) {
-                                StrongReminderOverlayService.startIfPossible(appContext, updatedTask, logId)
+                        val taskForActivity = updatedTask
+                        val logIdForActivity = logId
+                        mainHandler.post {
+                            try {
+                                FullScreenAlarmActivity.start(
+                                    appContext,
+                                    taskForActivity.taskId,
+                                    taskForActivity.event,
+                                    taskForActivity.description,
+                                    logIdForActivity,
+                                    taskForActivity.taskId.hashCode()
+                                )
+                                AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${taskForActivity.event}")
+                            } catch (e: Exception) {
+                                AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
+                                // 备用：启动 StrongReminderOverlayService
+                                if (PermissionUtils.canDrawOverlay(appContext)) {
+                                    StrongReminderOverlayService.startIfPossible(appContext, taskForActivity, logIdForActivity)
+                                }
                             }
                         }
                     }
@@ -81,23 +89,27 @@ class AlarmReceiver : BroadcastReceiver() {
                         )
                     )
                     DuckTaskNotifications.showReminder(appContext, task, null, logId)
-                    // STRONG 模式：启动全屏提醒 Activity
+                    // STRONG 模式：启动全屏提醒 Activity（在主线程）
                     if (task.reminderMode == ReminderMode.STRONG) {
-                        try {
-                            FullScreenAlarmActivity.start(
-                                appContext,
-                                task.taskId,
-                                task.event,
-                                task.description,
-                                logId,
-                                task.taskId.hashCode()
-                            )
-                            AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${task.event}")
-                        } catch (e: Exception) {
-                            AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
-                            // 备用：启动 StrongReminderOverlayService
-                            if (PermissionUtils.canDrawOverlay(appContext)) {
-                                StrongReminderOverlayService.startIfPossible(appContext, task, logId)
+                        val taskForActivity = task
+                        val logIdForActivity = logId
+                        mainHandler.post {
+                            try {
+                                FullScreenAlarmActivity.start(
+                                    appContext,
+                                    taskForActivity.taskId,
+                                    taskForActivity.event,
+                                    taskForActivity.description,
+                                    logIdForActivity,
+                                    taskForActivity.taskId.hashCode()
+                                )
+                                AppLogger.info("AlarmReceiver", "Started FullScreenAlarmActivity for: ${taskForActivity.event}")
+                            } catch (e: Exception) {
+                                AppLogger.error("AlarmReceiver", "Failed to start FullScreenAlarmActivity", e)
+                                // 备用：启动 StrongReminderOverlayService
+                                if (PermissionUtils.canDrawOverlay(appContext)) {
+                                    StrongReminderOverlayService.startIfPossible(appContext, taskForActivity, logIdForActivity)
+                                }
                             }
                         }
                     }
