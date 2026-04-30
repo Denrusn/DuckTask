@@ -232,8 +232,6 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .statusBarsPadding()
-                .navigationBarsPadding()
         ) {
             when (currentDestination) {
                 MainDestination.HOME -> HomeContent(
@@ -369,7 +367,7 @@ private fun HomeContent(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             if (tasks.isEmpty()) {
                 EmptyState()
             } else {
